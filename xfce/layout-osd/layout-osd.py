@@ -1,8 +1,47 @@
-
 #!/usr/bin/env python3
 import ctypes
+import fcntl
+import os
+from pathlib import Path
+import signal
+import sys
 import re
 import subprocess
+
+# A per-user lock also provides a narrowly scoped stop command for the installer.
+lock_dir = Path(os.environ.get("XDG_CACHE_HOME", str(Path.home() / ".cache"))) / "layout-osd"
+lock_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+lock_file = (lock_dir / "instance.lock").open("a+")
+try:
+    fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+except BlockingIOError:
+    if sys.argv[1:] == ["--stop"]:
+        lock_file.seek(0)
+        try:
+            pid = int(lock_file.read().strip())
+            args = Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
+            if len(args) > 1 and Path(os.fsdecode(args[1])).resolve() == Path(__file__).resolve():
+                os.kill(pid, signal.SIGTERM)
+            else:
+                raise SystemExit("Cannot verify the running Layout OSD process.")
+        except (ValueError, ProcessLookupError, FileNotFoundError):
+            pass
+        raise SystemExit(0)
+    raise SystemExit("Layout OSD is already running.")
+if sys.argv[1:] == ["--stop"]:
+    raise SystemExit(0)
+if sys.argv[1:]:
+    raise SystemExit("Usage: layout-osd.py [--stop]")
+lock_file.seek(0)
+lock_file.truncate()
+lock_file.write(str(os.getpid()))
+lock_file.flush()
+
+if os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland" or os.environ.get("WAYLAND_DISPLAY"):
+    raise SystemExit("Layout OSD requires an X11 session; Wayland is not supported.")
+if not os.environ.get("DISPLAY"):
+    raise SystemExit("Layout OSD requires an X11 display.")
+os.environ["GDK_BACKEND"] = "x11"
 
 import gi
 
@@ -32,13 +71,6 @@ x11.XkbGetState.argtypes = [
 ]
 x11.XkbGetState.restype = ctypes.c_int
 
-x11.XkbGetIndicatorState.argtypes = [
-    ctypes.c_void_p,
-    ctypes.c_uint,
-    ctypes.POINTER(ctypes.c_uint),
-]
-x11.XkbGetIndicatorState.restype = ctypes.c_int
-
 x11.XGetInputFocus.argtypes = [
     ctypes.c_void_p,
     ctypes.POINTER(ctypes.c_ulong),
@@ -47,30 +79,29 @@ x11.XGetInputFocus.argtypes = [
 x11.XGetInputFocus.restype = ctypes.c_int
 
 
+x11.XCloseDisplay.argtypes = [ctypes.c_void_p]
+x11.XCloseDisplay.restype = ctypes.c_int
+
+
 class XkbState(ctypes.Structure):
     _fields_ = [
+        ("group", ctypes.c_ubyte),
+        ("locked_group", ctypes.c_ubyte),
+        ("base_group", ctypes.c_ushort),
+        ("latched_group", ctypes.c_ushort),
+    ] + [
         (name, ctypes.c_ubyte)
         for name in (
-            "group",
-            "locked_group",
-            "base_group",
-            "latched_group",
-            "mods",
-            "base_mods",
-            "latched_mods",
-            "locked_mods",
-            "compat_state",
-            "grab_mods",
-            "compat_grab_mods",
-            "lookup_mods",
-            "compat_lookup_mods",
+            "mods", "base_mods", "latched_mods", "locked_mods",
+            "compat_state", "grab_mods", "compat_grab_mods",
+            "lookup_mods", "compat_lookup_mods",
         )
     ] + [("ptr_buttons", ctypes.c_ushort)]
 
 
 display = x11.XOpenDisplay(None)
 if not display:
-    raise SystemExit("Потрібен сеанс X11")
+    raise SystemExit("Cannot open the X11 display.")
 
 
 def get_xkb_state():
@@ -83,19 +114,8 @@ def get_xkb_state():
     ) != 0:
         return None, None
 
-    indicators = ctypes.c_uint(0)
-
-    result = x11.XkbGetIndicatorState(
-        display,
-        XKB_CORE_KEYBOARD,
-        ctypes.byref(indicators),
-    )
-
-    if result != 0:
-        return state.group, None
-
-    # У поточній конфігурації перший індикатор — Caps Lock.
-    caps_locked = bool(indicators.value & 0x01)
+    # Use the X11 Lock modifier rather than assuming an indicator index.
+    caps_locked = bool(state.locked_mods & 0x02)
 
     return state.group, caps_locked
 
@@ -381,4 +401,7 @@ class LayoutOSD(Gtk.Window):
 
 if __name__ == "__main__":
     window = LayoutOSD()
-    Gtk.main()
+    try:
+        Gtk.main()
+    finally:
+        x11.XCloseDisplay(display)

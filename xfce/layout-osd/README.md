@@ -32,7 +32,7 @@ sudo apt install python3-gi gir1.2-gtk-3.0 libx11-6 x11-xkb-utils
 **1. Clone the repository**
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/linux-scripts.git
+git clone https://github.com/VladCraft228/linux-scripts.git
 ```
 
 **2. Navigate to the Layout OSD directory**
@@ -89,6 +89,29 @@ Developed and tested for MX Linux with XFCE on X11.
 
 Wayland is not supported because the application relies on X11/XKB APIs.
 
+## Stopping and removal
+
+```bash
+python3 ~/.local/bin/layout-osd.py --stop
+./uninstall.sh
+```
+
+Only one instance can run per user. The installer stops an existing instance
+before updating it. The installer also handles the original version by matching the exact installed
+script path and current user.
+
+Autostart respects `XDG_CONFIG_HOME` (default: `~/.config`).
+The instance lock is stored under `XDG_CACHE_HOME` (default: `~/.cache`).
+
+## Known limitations
+
+- Layouts are read at startup. Restart after changing the configured layout list.
+- Focus-change filtering is best effort: changes are sampled every 100 ms.
+- Transparency requires an enabled compositor.
+- Caps Lock detection uses the standard X11 Lock modifier mapping.
+- This is an X11 utility, including when launched manually; Wayland is rejected.
+- GUI behavior is tested by the project author on MX Linux XFCE.
+
 ## License
 
-See the repository's `LICENSE` file, if provided.
+A license has not yet been selected for this repository.
