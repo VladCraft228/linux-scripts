@@ -1,0 +1,25 @@
+name: Dock prototype
+on:
+  push:
+    paths: ['common/dock/**', '.github/workflows/dock.yml']
+  pull_request:
+    paths: ['common/dock/**', '.github/workflows/dock.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: debian:trixie
+    steps:
+      - name: Install dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git ca-certificates build-essential cmake ninja-build pkg-config qt6-base-dev qt6-declarative-dev qml6-module-qtquick qml6-module-qtquick-window qml6-module-qtqml-workerscript libxcb1-dev libxcb-shape0-dev xvfb xauth openbox x11-utils xdotool
+      - uses: actions/checkout@v4
+      - name: Build
+        run: bash common/dock/build.sh
+      - name: X11 smoke test
+        run: xvfb-run -a bash common/dock/tests/smoke-x11.sh
+      - name: Headless QML test
+        run: ctest --test-dir common/dock/build --output-on-failure
