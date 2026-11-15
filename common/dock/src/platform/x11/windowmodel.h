@@ -1,58 +1,51 @@
 #pragma once
-
+#include "runtime.h"
 #include <QAbstractListModel>
-#include <QHash>
-#include <QImage>
 #include <QQuickWindow>
-#include <QRegion>
-#include <QSocketNotifier>
-#include <QSet>
-#include <QTimer>
-#include <QVariantList>
-#include <xcb/xcb.h>
-
-// Technical prototype: one model entry per window, not yet per application.
 class WindowModel final : public QAbstractListModel {
-    Q_OBJECT
+  Q_OBJECT
+  Q_PROPERTY(bool pointerInside READ pointerInside NOTIFY pointerInsideChanged)
+  Q_PROPERTY(bool edgeHovered READ edgeHovered NOTIFY edgeHoveredChanged)
+  Q_PROPERTY(
+      bool dockObstructed READ dockObstructed NOTIFY dockObstructedChanged)
+  Q_PROPERTY(
+      bool desktopVisible READ desktopVisible NOTIFY desktopVisibleChanged)
 public:
-    enum Role { WindowId = Qt::UserRole + 1, Title, IconUrl, Active };
-    explicit WindowModel(QObject *parent = nullptr);
-    ~WindowModel() override;
-    bool valid() const;
-    int rowCount(const QModelIndex &parent = {}) const override;
-    QVariant data(const QModelIndex &index, int role) const override;
-    QHash<int, QByteArray> roleNames() const override;
-    QImage icon(xcb_window_t id) const;
-    void attach(QQuickWindow *window);
-    Q_INVOKABLE void activate(quint32 id);
-    Q_INVOKABLE void setInputRegion(const QVariantList &rectangles);
+  enum Role {
+    WindowId = Qt::UserRole + 1,
+    Title,
+    IconUrl,
+    Active,
+    ClassNames,
+    DesktopId
+  };
+  explicit WindowModel(Runtime *runtime, QObject *parent = nullptr);
+  bool valid() const { return runtime_->valid(); }
+  bool pointerInside() const { return inside_; }
+  bool edgeHovered() const { return edge_; }
+  bool dockObstructed() const { return obstructed_; }
+  bool desktopVisible() const { return desktop_; }
+  void attach(QQuickWindow *window);
+  int rowCount(const QModelIndex &parent = {}) const override;
+  QVariant data(const QModelIndex &index, int role) const override;
+  QHash<int, QByteArray> roleNames() const override;
+  QImage icon(quint32 id) const { return runtime_->taskIcon(id); }
+  Q_INVOKABLE void activate(quint32 id);
+  void minimize(quint32 id);
+  void closeWindow(quint32 id);
+  Q_INVOKABLE void setInputRegion(const QVariantList &rects);
+  Q_INVOKABLE void setDockArea(qreal x, qreal y, qreal width, qreal height);
+  Q_INVOKABLE void setDockHidden(bool hidden);
+signals:
+  void pointerInsideChanged();
+  void edgeHoveredChanged();
+  void dockObstructedChanged();
+  void desktopVisibleChanged();
 
 private:
-    struct Task {
-        xcb_window_t id;
-        QString title;
-        QString iconKey;
-        QImage image;
-        bool active;
-        quint64 revision;
-    };
-    xcb_atom_t atom(const QByteArray &name);
-    QByteArray property(xcb_window_t window, const QByteArray &name,
-                        xcb_atom_t type, uint32_t limit = 4096);
-    QVector<quint32> cardinals(xcb_window_t window, const QByteArray &name,
-                              xcb_atom_t type = XCB_ATOM_ATOM);
-    void drain();
-    void refresh();
-    QImage loadIcon(xcb_window_t id, const QString &iconKey);
-    xcb_connection_t *connection_ = nullptr;
-    xcb_window_t root_ = XCB_WINDOW_NONE;
-    QHash<QByteArray, xcb_atom_t> atoms_;
-    QVector<Task> tasks_;
-    QSet<xcb_window_t> dirtyIcons_;
-    QSocketNotifier *notifier_ = nullptr;
-    QTimer refreshTimer_;
-    QQuickWindow *window_ = nullptr;
-    quint64 revision_ = 0;
-    QRegion inputRegion_;
-    qreal inputScale_ = 0;
+  Runtime *runtime_;
+  QQuickWindow *window_ = nullptr;
+  QJsonArray rows_, lastRegion_;
+  qreal lastScale_ = 0;
+  bool inside_ = false, edge_ = false, obstructed_ = false, desktop_ = true;
 };

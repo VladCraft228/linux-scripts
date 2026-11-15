@@ -12,6 +12,8 @@ cleanup() {
 trap cleanup EXIT
 export XDG_RUNTIME_DIR="$TEMP_DIR/runtime"
 mkdir -m 700 "$XDG_RUNTIME_DIR"
+export XDG_CONFIG_HOME="$TEMP_DIR/config"
+export XDG_DATA_HOME="$TEMP_DIR/data"
 export XDG_SESSION_TYPE=x11
 unset WAYLAND_DISPLAY
 export QT_QUICK_BACKEND=software
@@ -23,7 +25,9 @@ for _ in {1..50}; do
 done
 xmessage -title DockSmokeTest ready >"$TEMP_DIR/client.log" 2>&1 &
 client_pid=$!
-"$BINARY" >"$TEMP_DIR/dock.log" 2>&1 &
+launcher="$TEMP_DIR/Cold launcher.desktop"
+printf '[Desktop Entry]\nType=Application\nName=Cold Launcher Test\nExec=/usr/bin/touch %s\n' "$TEMP_DIR/not-launched" > "$launcher"
+"$BINARY" --pin-desktop "$launcher" >"$TEMP_DIR/dock.log" 2>&1 &
 dock_pid=$!
 dock_id=""
 for _ in {1..50}; do
@@ -43,9 +47,23 @@ if XDG_SESSION_TYPE=wayland "$BINARY" >"$TEMP_DIR/wayland.log" 2>&1; then exit 1
 grep -q 'X11 only' "$TEMP_DIR/wayland.log"
 sleep 0.3
 kill -0 "$dock_pid"
+[[ -e "$launcher" && ! -e "$TEMP_DIR/not-launched" ]]
+launcher_hash="$(sha256sum "$launcher")"
+grep -Rq "${launcher_hash%% *}" "$XDG_CONFIG_HOME"
+if ! grep -q 'Local launcher integration unavailable' "$TEMP_DIR/dock.log"; then
+    warm_launcher="$TEMP_DIR/Warm launcher.desktop"
+    printf '[Desktop Entry]\nType=Application\nName=Warm Launcher Test\nExec=/usr/bin/touch %s\n' "$TEMP_DIR/not-launched" > "$warm_launcher"
+    "$BINARY" --pin-desktop "$warm_launcher"
+    warm_hash="$(sha256sum "$warm_launcher")"
+    grep -Rq "${warm_hash%% *}" "$XDG_CONFIG_HOME"
+    [[ -e "$warm_launcher" && ! -e "$TEMP_DIR/not-launched" ]]
+    echo "PASS: launcher forwarded to the existing instance."
+else
+    echo "Local socket binding unavailable; existing-instance forwarding needs a native environment."
+fi
 if grep -E 'ReferenceError|TypeError|Binding loop|failed to load component|is not installed|Cannot assign' "$TEMP_DIR/dock.log"; then
     cat "$TEMP_DIR/dock.log"
     exit 1
 fi
 cat "$TEMP_DIR/dock.log"
-echo "PASS: QML startup, X11 dock type, single instance, Wayland rejection."
+echo "PASS: cold launcher import without execution, QML startup, X11 dock type, single instance, Wayland rejection."

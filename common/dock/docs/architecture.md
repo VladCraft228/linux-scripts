@@ -1,37 +1,75 @@
-# Architecture decision: technical prototype
+# Architecture: Rust engine and Qt Quick presentation
 
-Status: agreed technology; first implementation pending real XFCE validation.
+## Boundary
 
-## Agreed direction
+Rust owns application identity matching, grouping, pin order, desktop-entry
+import/launch, launch deadlines and all native X11 integration. The existing
+`qml/Main.qml` is unchanged by the migration. The model's public role names and
+invokables remain compatible with that QML.
 
-C++17 owns native integration and models; Qt Quick/QML owns presentation.
-Qt 6.8 is the minimum, matching the initial Debian 13 system.
-The technical prototype uses a small X11 WindowModel to validate the difficult
-platform boundaries before extracting application grouping and launcher services.
+- `rust/src/model.rs`: policy, GIO application catalog and launching, bounded
+  imports, monotonic pending-launch records and settings validation.
+- `rust/src/x11.rs`: an x11rb connection, EWMH/ICCCM events/actions, input shaping,
+  native pointer presence, window icons and overlap detection.
+- `rust/src/engine.rs`: synchronous command dispatch and changed-state snapshots.
+- `rust/src/bridge.rs`: the CXX-Qt QObject entry point.
+- `src/runtime.*`: Qt event-loop adapters, compatible QSettings storage, system
+  icon drawing and transfer of changed snapshots to the two list adapters.
+- `src/applicationmodel.*`, `src/platform/x11/windowmodel.*`: Qt role/property
+  adapters. They contain no grouping or X11 protocol implementation.
+- `src/main.cpp`: Qt process startup, theme, surface placement and image providers.
 
-The X11 connection is separate from Qt's connection. It subscribes to EWMH root
-properties and client metadata. QSocketNotifier drains events and a single-shot
-25 ms timer coalesces bursts. The timer is stopped when idle. Input masks are
-sent only when geometry changes, using SHAPE's input region rather than clipping
-the rendered window. Input rectangles include the panel and expanded icons.
+Qt remains a C++ library. CXX-Qt generates C++ bridge code, and the Qt-specific
+presentation adapter remains C++. This does not make Qt or its dependencies
+memory-safe; the migrated application policy and X11 protocol handling use Rust.
+There is no handwritten unsafe Rust in the engine; the binding declaration marks
+the external Qt type as required by CXX. GIO and Qt bindings use FFI internally.
 
-QML computes magnification from stable baseline icon centers. Neighboring icons
-move with their animated widths. Icon source dimensions remain fixed during
-animation. This first implementation can still require tuning to avoid cursor
-oscillation at the shaped boundary; that must be tested on a real compositor.
+## Dispatch and scheduling
 
-## Next steps after validation
+All engine calls run synchronously on the GUI thread through a CXX-Qt method. A
+compact JSON message is the in-process serialization boundary, not a socket or
+subprocess. No messages are queued into Rust while a mutable Rust call is active.
+The Rust engine returns changed task/group/configuration snapshots and dirty icon
+data; unchanged model snapshots are not transmitted back to Qt.
 
-1. Extract PlatformBackend: window events/actions and dock-surface integration.
-2. Add ApplicationCatalog: desktop IDs, desktop-file launching, matching rules.
-3. Add DockModel: persistent launchers grouped with their windows.
-4. Add reorder, full context menus, and basic autohide with an edge trigger.
-5. Add settings and performance measurement before calling the dock an MVP.
-6. Implement a Plasma/KWin Wayland backend separately from X11.
+QSocketNotifier watches the Rust X11 connection fd. Event bursts schedule one
+25 ms refresh; there is no idle window polling. X11 calls can buffer protocol
+events while reading replies, so dispatch drains those events before returning.
+The 80 ms pointer fallback runs only while hidden or recovering from a popup
+pointer grab. A single-shot launch timer targets the next Rust monotonic deadline.
+Qt timers implement scheduling, not policy. A broken X11 connection requires a
+restart; the application does not silently reconnect with stale window IDs.
 
-Wayland surface placement and task/window management are separate capabilities.
-Do not promise generic Wayland support based on layer-shell alone.
+## Compatibility
 
-No application launching through shell-expanded desktop-file Exec strings is
-implemented in this prototype. Evaluate the dependency cost of KService before
-choosing the desktop-entry launcher implementation.
+Qt's existing QSettings serializer is retained deliberately: it understands the
+original QStringList and QVariantMap encoding. Rust receives a normalized config
+snapshot and returns updates, which Qt persists with the same keys and identity.
+Icons continue through QIcon and the system theme. Native ARGB icon payloads are
+bounds-checked in Rust and copied into owned QImage storage by the adapter.
+Configuration write errors are surfaced; Rust memory state may then differ from
+persisted state until restart. Imported copies can remain orphaned after a failed
+configuration write. Do not claim disk/config persistence after a reported error.
+
+The normal resting background rectangle is the only intelligent-hide footprint;
+magnification and hide translations cannot move it. Active current-workspace
+windows are considered regardless of stacking occlusion. Hidden, iconic,
+skip-taskbar utility, desktop and panel windows are excluded, as before.
+
+## Build
+
+CMake builds the Rust static library through Cargo `--locked --features qt`, then
+links the Qt executable using mold. The CXX-Qt 0.8.1 export layout is pinned by
+Cargo.lock; changing CXX-Qt requires rechecking the CMake include/export paths.
+`cargo test` without `qt` tests policy independently from the Qt development SDK.
+The GUI still requires Qt 6.8 and X11. There is no Wayland backend in this release.
+
+## Local launcher requests
+
+`--pin-desktop` either imports files before showing a new Dock or forwards their
+file URLs to the existing instance. The Qt local-socket adapter accepts only a
+bounded, newline-framed `pinFiles` request, limited to 32 URL strings; Rust still
+validates each file and the complete batch. The listener lives in the user runtime
+directory with current-user access. Socket errors never spawn a second Dock.
+No arbitrary command execution is exposed by this transport.
