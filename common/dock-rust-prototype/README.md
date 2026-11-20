@@ -148,12 +148,14 @@ by the user.
   into `${XDG_DATA_HOME:-~/.local/share}/linux-scripts-dock-rust-prototype/launchers`;
   their original files are never moved or deleted. Copies are loaded on restart.
   Identical launcher content/commands are reused rather than pinned twice.
-- Drag pinned icons horizontally to reorder. A 6 px movement threshold separates
+- Drag icons horizontally to reorder them, including placing a running icon between pins. A 6 px movement threshold separates
   dragging from a click; ordinary clicks activate on button release. Neighboring
-  icons slide smoothly, and the dragged icon stays above them. Order is saved
-  once on release, not for every mouse movement. Escape, right-click during drag,
-  or release outside the dock cancels and restores the saved order. Auto-hide is
-  paused during a drag. Only pinned icons can be reordered; pin running apps first.
+  icons slide smoothly, and the dragged icon stays above them. Pinned order is saved
+  once on release, not for every mouse movement. Unpinned running order is session-only
+  and survives focus/notification updates while the dock remains running. A running icon can temporarily occupy a slot between pins. Closing the app
+  removes that slot and leaves the pins in their saved relative order. Escape,
+  right-click during drag, or release outside the dock restores the starting order.
+  Closing the dragged app also cancels safely. Auto-hide is paused during a drag.
   For an overflowing list, the mouse wheel scrolls while holding the dragged icon.
 - The icon row sits 6 px higher; the background geometry and animation timings
   are unchanged.
@@ -583,3 +585,33 @@ Only this edition is migrated; the original Qt Dock is not modified.
 Validate the Prychal launcher, About/version, restart persistence and existing
 autostart flags on the laptop. Source syntax, shell syntax, dependency metadata
 and patch application are checked here; no local build or GUI test was run.
+
+## File drag hover activation
+
+Keep holding a file from Thunar over a running app's icon for about 650 ms. The
+dock activates/restores that app's most recently focused surviving window (or its
+first tracked window if no focus history is available). Keep the mouse button held,
+move into that window, and drop in the app's own upload/attachment area. The app
+and file manager handle the actual transfer; the dock does not forward the file,
+launch commands for it, or claim a successful file operation. A not-yet-running
+launcher is not started by file hovering.
+
+External hover tracks standard XDND root positions while the source owns the mouse;
+no pointer grab or periodic pointer polling is added. Activation occurs once per
+continuous hover, restarts its delay when moving to another icon, and is cancelled
+when leaving, dropping, timing out or when the target closes. The existing chooser
+is hidden during a file drag so it cannot intercept the file. Dock reveal and icon
+magnification remain available, and activation never uses the minimize-on-click path.
+
+Direct drops onto the dock still accept only local `.desktop` launchers for pinning.
+For ordinary files, keep dragging into the restored application window; dropping
+them onto the panel itself is rejected and leaves them at the source.
+
+Validate on XFCE: swap two unpinned apps, change focus, and check the order stays;
+then cancel a reorder with Escape/drop outside and check the starting order returns.
+Check pinned reordering and persistence too. Drag a harmless file over a minimized
+browser/messenger icon, pause until restored, and continue into its attachment area.
+Check that a quick pass over icons does not activate them and holding still does
+not repeatedly activate/minimize. Verify `.desktop` pinning still works. Source and
+patch checks are performed here; compilation and live drag behavior are validated
+on the user's laptop.

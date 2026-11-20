@@ -427,12 +427,37 @@ pub struct WindowInfo {
     pub title: String,
     pub active: bool,
 }
+fn reorder_items(items: &mut [Item], order: &[String]) {
+    items.sort_by_key(|item| order.iter().position(|key| key == &item.key).unwrap_or(usize::MAX));
+}
+
+// Keep temporary running slots while taking the pinned order from the saved pins.
+fn restore_display_order(items: Vec<Item>, pins_len: usize, previous: &[String]) -> Vec<Item> {
+    let mut slots: Vec<_> = items.iter().map(|item| (item.key.as_str(), item.pinned)).collect();
+    slots.sort_by_key(|(key, pinned)| {
+        match previous.iter().position(|previous_key| previous_key.as_str() == *key) {
+            Some(index) => (1, index),
+            None if *pinned => (0, 0),
+            None => (2, 0),
+        }
+    });
+    let slot_types: Vec<_> = slots.into_iter().map(|(_, pinned)| pinned).collect();
+    let mut pinned = items;
+    let mut running = pinned.split_off(pins_len);
+    reorder_items(&mut running, previous);
+    let mut pinned = pinned.into_iter();
+    let mut running = running.into_iter();
+    slot_types.into_iter().filter_map(|is_pinned| {
+        if is_pinned { pinned.next() } else { running.next() }
+    }).collect()
+}
 pub struct Apps {
     pub settings_window: Option<u32>,
     titles: HashMap<u32, String>,
     pub items: Vec<Item>,
     pub active: u32,
     pub attention: HashSet<String>,
+    recent_windows: HashMap<String, u32>,
     pub notification_ids: HashMap<String, Vec<String>>,
     pub atoms: Atoms,
     catalog: Catalog,
@@ -461,6 +486,7 @@ impl Apps {
             items: Vec::new(),
             active: 0,
             attention: HashSet::new(),
+            recent_windows: HashMap::new(),
             notification_ids: HashMap::new(),
             atoms: Atoms::new(c)?,
             catalog,
@@ -663,12 +689,11 @@ impl Apps {
                 pinned: false,
             });
         }
-        // Keep surviving running applications in the same order on focus changes.
-        items[pins_len..].sort_by_key(|i| {
-            old.iter()
-                .position(|key| key == &i.key)
-                .unwrap_or(usize::MAX)
-        });
+        let items = restore_display_order(items, pins_len, &old);
+        self.recent_windows.retain(|key, window| items.iter().any(|item| &item.key == key && item.windows.contains(window)));
+        for item in &items {
+            if item.windows.contains(&self.active) { self.recent_windows.insert(item.key.clone(), self.active); }
+        }
         self.notification_ids.clear();
         for item in &items {
             let mut ids = vec![item.key.clone()];
@@ -812,24 +837,19 @@ impl Apps {
         }).cloned().collect();
         self.pins.remove(&keys)
     }
-    pub fn pinned_keys(&self) -> Vec<String> {
-        self.items
-            .iter()
-            .filter(|i| i.pinned)
-            .map(|i| i.key.clone())
-            .collect()
+    pub fn drag_keys(&self) -> Vec<String> {
+        self.items.iter().map(|item| item.key.clone()).collect()
     }
-    pub fn preview_pin_order(&mut self, order: &[String]) {
-        let n = self.items.iter().take_while(|i| i.pinned).count();
-        self.items[..n].sort_by_key(|i| {
-            order
-                .iter()
-                .position(|key| key == &i.key)
-                .unwrap_or(usize::MAX)
-        });
+    pub fn preview_drag_order(&mut self, order: &[String]) {
+        reorder_items(&mut self.items, order);
     }
-    pub fn save_pin_order(&mut self, order: Vec<String>) -> Result<()> {
-        self.pins.reorder(order)
+    pub fn drag_window(&self, key: &str) -> Option<u32> {
+        let item = self.items.iter().find(|item| item.key == key)?;
+        self.recent_windows.get(key).copied().filter(|window| item.windows.contains(window))
+            .or_else(|| item.windows.first().copied())
+    }
+    pub fn save_pin_order(&mut self) -> Result<()> {
+        self.pins.reorder(self.items.iter().filter(|item| item.pinned).map(|item| item.key.clone()).collect())
     }
     pub fn toggle_pin(&mut self, key: &str) -> Result<()> {
         let item = self
@@ -973,6 +993,27 @@ impl Apps {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn temporary_running_slot_survives_refresh_and_disappears_on_close() {
+        let item = |key: &str, pinned| Item {
+            key: key.into(),
+            name: key.into(),
+            pinned,
+            launcher: None,
+            icon: None,
+            windows: vec![],
+        };
+        let previous = vec!["left".into(), "running".into(), "right".into()];
+        let items = restore_display_order(
+            vec![item("left", true), item("right", true), item("running", false)], 2, &previous,
+        );
+        let keys: Vec<_> = items.iter().map(|item| item.key.as_str()).collect();
+        assert_eq!(keys, ["left", "running", "right"]);
+        assert!(!items[1].pinned);
+        let items = restore_display_order(vec![item("left", true), item("right", true)], 2, &previous);
+        let keys: Vec<_> = items.iter().map(|item| item.key.as_str()).collect();
+        assert_eq!(keys, ["left", "right"]);
+    }
     #[test]
     fn desktop_launch_arguments() {
         let args = expand_exec(

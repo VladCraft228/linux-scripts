@@ -9,7 +9,8 @@ Edition settings independent from the Qt implementation during this work.
 
 - Pure Rust X11 rendering, magnification and fixed base panel geometry.
 - System icon themes, running applications, grouping and minimize/restore.
-- Persistent pinning and drag reordering with cancellation.
+- Persistent pinned reordering and session-only running icon placement, including between pins, with cancellation.
+- XDND file-hover activation/restoration of running application windows.
 - Local `.desktop` drag-and-drop import and deduplication.
 - A separate native settings window with sidebar sections, sliders, switches,
   live preview, color controls, resize/close support, and reset retaining pins.

@@ -35,6 +35,7 @@ struct Session {
     waiting: bool,
     time: u32,
     deadline: Instant,
+    position: Option<(i16, i16, u32)>,
 }
 pub struct DropTarget {
     a: Atoms,
@@ -71,6 +72,9 @@ impl DropTarget {
     }
     pub fn active(&self) -> bool {
         self.session.is_some()
+    }
+    pub fn position(&self) -> Option<(i16, i16, u32)> {
+        self.session.as_ref().filter(|session| session.offered && !session.waiting).and_then(|session| session.position)
     }
     pub fn accepting(&self) -> bool {
         self.session.as_ref().is_some_and(|s| s.offered)
@@ -184,6 +188,7 @@ impl DropTarget {
                     waiting: false,
                     time: 0,
                     deadline: Instant::now() + Duration::from_secs(30),
+                    position: None,
                 });
             } else if self
                 .session
@@ -195,6 +200,7 @@ impl DropTarget {
                     if s.waiting {
                         return Ok(None);
                     }
+                    s.position = Some(((d[2] >> 16) as u16 as i16, d[2] as u16 as i16, d[3]));
                     s.accepted = s.offered;
                     s.deadline = Instant::now() + Duration::from_secs(30);
                     let (source, target, accepted) = (s.source, s.target, s.accepted);
@@ -319,7 +325,7 @@ fn local_files(data: &[u8]) -> Result<Vec<PathBuf>> {
         let path = PathBuf::from(OsString::from_vec(decoded));
         if path.extension().is_none_or(|s| s != "desktop") {
             return Err(
-                "Drop .desktop launchers, not applications, folders, or other files".into(),
+                "For ordinary files, hover an app icon and keep dragging into its window. Only .desktop launchers can be dropped directly onto the dock".into(),
             );
         }
         if !files.contains(&path) {

@@ -4,6 +4,7 @@ mod badges;
 mod applications;
 mod colors;
 mod drop_target;
+mod drag_hover;
 mod icons;
 mod instance;
 mod keyboard;
@@ -91,13 +92,18 @@ struct Drag {
     eligible: bool,
     active: bool,
     order: Vec<String>,
+    original_order: Vec<String>,
+    pinned: bool,
 }
-fn finish_drag<C: Connection>(c: &C, drag: &mut Option<Drag>) -> Result<Option<Drag>> {
+fn finish_drag<C: Connection>(c: &C, drag: &mut Option<Drag>, apps: &mut Apps) -> Result<Option<Drag>> {
     let ended = drag.take();
     if ended.as_ref().is_some_and(|d| d.active) {
         c.ungrab_pointer(0u32)?;
         c.ungrab_keyboard(0u32)?;
         c.flush()?;
+    }
+    if let Some(drag) = ended.as_ref().filter(|drag| drag.active) {
+        apps.preview_drag_order(&drag.original_order);
     }
     Ok(ended)
 }
@@ -585,6 +591,7 @@ fn run() -> Result<()> {
     let mut launches = launches::Launches::new();
     let mut notice = notice::Notice::new(&conn, root, visual.visual_id, cmap)?;
     let mut pending = None;
+    let mut drag_hover = drag_hover::DragHover::default();
     let mut launcher_badges = badges::Badges::new()?;
     loop {
         dirty |= launcher_badges.drain();
@@ -806,6 +813,12 @@ fn run() -> Result<()> {
             }
             if drop_was_active != dnd.active() {
                 dirty = true;
+                if dnd.active() {
+                    tooltip.hide(&conn)?;
+                    window_panel.hide(&conn)?;
+                    tooltip_at = None;
+                    hover_key = None;
+                }
                 if !dnd.active() {
                     pointer = None;
                     hide_at = if auto {
@@ -1125,7 +1138,7 @@ fn run() -> Result<()> {
                 Event::KeyPress(e)
                     if popup.is_escape(e.detail) && drag.as_ref().is_some_and(|d| d.active) =>
                 {
-                    finish_drag(&conn, &mut drag)?;
+                    finish_drag(&conn, &mut drag, &mut apps)?;
                     refresh_at = Some(Instant::now());
                     pointer = None;
                     hide_at = if auto {
@@ -1138,7 +1151,7 @@ fn run() -> Result<()> {
                 Event::ButtonPress(e)
                     if e.detail == 3 && drag.as_ref().is_some_and(|d| d.active) =>
                 {
-                    finish_drag(&conn, &mut drag)?;
+                    finish_drag(&conn, &mut drag, &mut apps)?;
                     refresh_at = Some(Instant::now());
                     pointer = None;
                     hide_at = if auto {
@@ -1256,7 +1269,7 @@ fn run() -> Result<()> {
                                 if from != target {
                                     let key = d.order.remove(from);
                                     d.order.insert(target, key);
-                                    apps.preview_pin_order(&d.order);
+                                    apps.preview_drag_order(&d.order);
                                     scroll_changed = true;
                                 }
                             }
@@ -1265,7 +1278,7 @@ fn run() -> Result<()> {
                     }
                 }
                 Event::ButtonPress(e) if e.detail == 3 => {
-                    finish_drag(&conn, &mut drag)?;
+                    finish_drag(&conn, &mut drag, &mut apps)?;
                     let index = layout.hit(e.event_x as f32);
                     let item = index.and_then(|i| apps.items.get(offset + i));
                     let anchor = (
@@ -1300,15 +1313,17 @@ fn run() -> Result<()> {
                             start_x: e.root_x,
                             start_y: e.root_y,
                             root_x: e.root_x,
-                            eligible: item.pinned,
+                            eligible: true,
                             active: false,
-                            order: apps.pinned_keys(),
+                            order: apps.drag_keys(),
+                            original_order: apps.drag_keys(),
+                            pinned: item.pinned,
                         });
                         hide_at = None;
                     }
                 }
                 Event::ButtonRelease(e) if e.detail == 1 => {
-                    if let Some(d) = finish_drag(&conn, &mut drag)? {
+                    if let Some(d) = finish_drag(&conn, &mut drag, &mut apps)? {
                         let lx = e.root_x as f32 - x as f32;
                         let ly = e.root_y as f32 - y as f32;
                         let inside = lx >= layout.panel_x()
@@ -1317,8 +1332,12 @@ fn run() -> Result<()> {
                             && ly < H as f32;
                         if d.active {
                             if inside {
-                                if let Err(error) = apps.save_pin_order(d.order) {
-                                    eprintln!("Save order: {error}");
+                                apps.preview_drag_order(&d.order);
+                                if d.pinned {
+                                    if let Err(error) = apps.save_pin_order() {
+                                        apps.preview_drag_order(&d.original_order);
+                                        eprintln!("Save order: {error}");
+                                    }
                                 }
                             }
                             refresh_at = Some(Instant::now());
@@ -1397,8 +1416,10 @@ fn run() -> Result<()> {
             if refresh_at.is_some_and(|t| now >= t) {
                 apps.refresh(&conn, root, window);
                 overlap_at = Some(now);
-                if let Some(d) = drag.as_ref().filter(|d| d.active) {
-                    apps.preview_pin_order(&d.order);
+                if drag.as_ref().is_some_and(|d| !apps.items.iter().any(|item| item.key == d.key && item.pinned == d.pinned)) {
+                    finish_drag(&conn, &mut drag, &mut apps)?;
+                } else if let Some(d) = drag.as_ref().filter(|d| d.active) {
+                    apps.preview_drag_order(&d.order);
                 }
                 refresh_at = None;
             }
@@ -1513,7 +1534,29 @@ fn run() -> Result<()> {
         } else {
             panel_hide_at = None;
         }
-        let magnify_pointer = if window_panel.visible {
+        let external_pointer = dnd.position().and_then(|(rx, ry, _)| {
+            let local_x = rx as f32 - x as f32;
+            let local_y = ry as f32 - y as f32;
+            (vis >= 0.98 && local_y >= 0. && local_y < H as f32).then_some(local_x)
+        });
+        let drag_candidate = external_pointer.and_then(|local| layout.hit(local))
+            .and_then(|index| apps.items.get(offset + index))
+            .filter(|item| !item.windows.is_empty())
+            .map(|item| item.key.clone());
+        drag_hover.observe(drag_candidate.as_deref(), now);
+        if let Some(key) = drag_hover.take_ready(now) {
+            if let Some(target) = apps.drag_window(&key) {
+                let time = dnd.position().map_or(0, |(_, _, time)| time);
+                if let Err(error) = apps.activate_window(&conn, root, &key, target, time) {
+                    eprintln!("File drag activation: {error}");
+                }
+                refresh_at = Some(now);
+                dirty = true;
+            }
+        }
+        let magnify_pointer = if dnd.active() {
+            external_pointer
+        } else if window_panel.visible {
             window_panel
                 .key
                 .as_ref()
@@ -1791,6 +1834,7 @@ fn run() -> Result<()> {
             panel_hide_at,
             window_panel.preview_deadline(),
             dnd.deadline(),
+            drag_hover.deadline(),
             if moving || dirty {
                 Some(next_frame)
             } else {
