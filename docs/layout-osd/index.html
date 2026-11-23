@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Layout OSD shows keyboard layout and Caps Lock changes on XFCE with X11.">
+  <title>Layout OSD — Linux Scripts</title>
+  <link rel="stylesheet" href="../prychal-dock/style.css">
+  <link rel="stylesheet" href="../catalog.css">
+</head>
+<body>
+  <header class="wrap mast">
+    <a class="brand" href="../">Linux<span>Scripts</span></a>
+    <nav aria-label="Main"><a href="../">All tools</a><a href="#install">Install</a><a class="git" href="https://github.com/VladCraft228/linux-scripts/tree/main/xfce/layout-osd">GitHub</a></nav>
+  </header>
+  <main class="wrap">
+    <section class="hero">
+      <div>
+        <p class="eyebrow">PYTHON + GTK3 FOR XFCE / X11</p>
+        <h1>Layout OSD<span>.</span></h1>
+        <p class="lede">See which keyboard layout is active as soon as you switch. A compact popup also tells you when Caps Lock turns on or off.</p>
+        <a class="button primary" href="#install">Install Layout OSD</a>
+      </div>
+      <figure class="demo osd-figure">
+        <div class="panel keyboard" aria-hidden="true"><div class="osd"><strong>UK</strong><span>Ukrainian</span></div></div>
+        <figcaption class="demo-foot">Illustration of the layout indicator</figcaption>
+      </figure>
+    </section>
+    <section class="installation osd-install" id="install">
+      <div>
+        <h2>Install on XFCE.</h2>
+        <p>Use an XFCE session on X11. The commands below install dependencies on Debian or MX Linux, then set up Layout OSD for your user and enable XFCE autostart.</p>
+        <p>See the <a href="https://github.com/VladCraft228/linux-scripts/tree/main/xfce/layout-osd#readme">project README</a> for configuration and removal.</p>
+      </div>
+      <div class="code">
+        <div class="codehead"><span>Terminal</span><button id="copy" type="button" hidden>Copy commands</button></div>
+        <pre id="commands" tabindex="0">sudo apt install python3-gi gir1.2-gtk-3.0 libx11-6 x11-xkb-utils
+git clone https://github.com/VladCraft228/linux-scripts.git
+cd linux-scripts/xfce/layout-osd
+bash install.sh</pre>
+        <span id="copied" role="status"></span>
+      </div>
+    </section>
+  </main>
+  <footer class="wrap foot"><span>Layout OSD · Linux Scripts</span><a href="../">All tools</a></footer>
+  <script src="copy.js"></script>
+</body>
+</html>

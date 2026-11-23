@@ -1,0 +1,25 @@
+.catalog-intro { padding: 76px 0 35px; }
+.catalog-intro .lede { max-width: 560px; }
+.catalog { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; padding-bottom: 70px; }
+.product { display: block; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; text-decoration: none; }
+.product:hover { border-color: var(--orange); }
+.panel { display: grid; place-items: center; min-height: 220px; }
+.pier { background: linear-gradient(#0b132a33, #0b132a66), url(prychal-dock/assets/pier.webp) center / cover; }
+.keyboard { background: radial-gradient(ellipse at 65% 18%, #415a79, transparent 62%), linear-gradient(125deg, #161d38, #29334e); }
+.osd { display: grid; place-content: center; text-align: center; width: 180px; height: 110px; line-height: 1.15; border-radius: 18px; background: #131929dd; border: 1px solid #9eafd65c; box-shadow: 0 16px 40px #080e2488; }
+.osd strong { font-size: 2.4rem; margin-bottom: 5px; }
+.osd span { color: #ced8e8; }
+.product-body { padding: 24px; }
+.product-body .eyebrow { margin-bottom: 12px; }
+.product-body h2 { font-size: clamp(1.6rem, 4vw, 2.25rem); }
+.product-body p:not(.eyebrow) { color: var(--muted); }
+.product-link { color: var(--orange); font-weight: 650; }
+.osd-figure { margin: 0; }
+.osd-figure .panel { min-height: 290px; }
+.osd-install .code { align-self: center; }
+@media (max-width: 620px) {
+  .catalog-intro { padding: 48px 0 22px; }
+  .catalog { grid-template-columns: 1fr; padding-bottom: 44px; }
+  .panel { min-height: 172px; }
+}
+@media(max-width:520px){ .mast nav a:first-child[href="../"] { display: inline; } }
