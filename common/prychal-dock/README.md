@@ -4,15 +4,13 @@ A lightweight, customizable application dock for XFCE/X11. Application
 logic, X11 integration, and UI rendering are written in Rust, using x11rb,
 tiny-skia, and fontdue. No Qt, GTK, QML, CMake, or C++ application code is needed.
 
-The source directory remains `common/dock-rust-prototype` during this rename.
-The executable and application menu name are now **Prychal Dock** (`prychal-dock`).
-Configuration, pins and imported launcher paths intentionally retain the previous
-`linux-scripts-dock-rust-prototype` directory so existing preferences keep working.
-The Qt-based `../dock` remains a separate implementation.
+The executable and application menu entry are named **Prychal Dock**
+(`prychal-dock`). The existing `linux-scripts-dock-rust-prototype` paths
+preserve settings, pins, and imported launchers across upgrades.
 
 ## Install and launch
 
-On the XFCE/X11 development laptop, close the running Rust prototype, then:
+On the XFCE/X11 development laptop, close Prychal Dock if it is running, then:
 
 ```sh
 bash install.sh
@@ -218,7 +216,7 @@ font through fontdue; fontconfig or fonts-dejavu-core normally supplies it on XF
 crates downloaded by Cargo. Existing dock development dependencies suffice.
 
 ```sh
-cd ~/Projects/linux-scripts/common/dock-rust-prototype
+cd ~/Projects/linux-scripts/common/prychal-dock
 bash build.sh
 ./target/release/prychal-dock
 ```
@@ -270,7 +268,7 @@ Do not launch applications during a measurement. Use release builds for both.
 Close the production dock first. Run all commands in the same terminal:
 
 ```sh
-cd ~/Projects/linux-scripts/common/dock-rust-prototype
+cd ~/Projects/linux-scripts/common/prychal-dock
 ./target/release/prychal-dock --no-autohide &
 rust_pid=$!
 

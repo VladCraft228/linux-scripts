@@ -5,7 +5,7 @@ thread, not a newly fetched GitHub revision. No build or GUI tests were run for
 this audit; the user validates changes on XFCE/X11.
 
 Original: `common/dock` (Rust core + CXX-Qt adapter + Qt Quick/QML).
-Prychal Dock: `common/dock-rust-prototype` (Rust X11/rendering/UI).
+Prychal Dock: `common/prychal-dock` (Rust X11/rendering/UI).
 
 ## Present in both editions
 
@@ -44,11 +44,11 @@ These are functional counterparts, not pixel-identical implementations.
 | Desktop entry launching | GIO DesktopAppInfo/AppLaunchContext | Partial: Prychal Dock parses a supported Exec subset; DBus-only launchers and localized display-name handling need parity work |
 | User-visible launch/import errors | QML `root.message` with a message timer | Partial: launch errors and unconfirmed-launch timeouts now appear above the dock; import/pin errors still use terminal diagnostics |
 
-Sources for this table: [original UI](../../dock/qml/Main.qml),
-[original model](../../dock/rust/src/model.rs),
-[original startup](../../dock/src/main.cpp),
-[original runtime](../../dock/src/runtime.cpp),
-[original installer](../../dock/install.sh), and the Prychal Dock source modules.
+Sources for this table: [original UI](https://github.com/VladCraft228/linux-scripts/blob/bc43992aea8de95ef06c0b5a06235b75f09a60f1/common/dock/qml/Main.qml),
+[original model](https://github.com/VladCraft228/linux-scripts/blob/bc43992aea8de95ef06c0b5a06235b75f09a60f1/common/dock/rust/src/model.rs),
+[original startup](https://github.com/VladCraft228/linux-scripts/blob/bc43992aea8de95ef06c0b5a06235b75f09a60f1/common/dock/src/main.cpp),
+[original runtime](https://github.com/VladCraft228/linux-scripts/blob/bc43992aea8de95ef06c0b5a06235b75f09a60f1/common/dock/src/runtime.cpp),
+[original installer](https://github.com/VladCraft228/linux-scripts/blob/bc43992aea8de95ef06c0b5a06235b75f09a60f1/common/dock/install.sh), and the Prychal Dock source modules.
 
 ## Prychal Dock additions
 

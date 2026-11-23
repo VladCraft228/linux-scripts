@@ -4,14 +4,13 @@ Small, practical Linux desktop tools with simple user-local installation.
 
 ## Common
 
-### Linux Scripts Dock
+### Prychal Dock
 
-A macOS-inspired XFCE/X11 application dock with a Rust engine and Qt Quick/QML
-interface: magnification, pinned/running applications, window cards, launcher
-imports, intelligent hide and persistent settings.
+A lightweight, customizable Rust application dock for XFCE on X11. It offers
+icon magnification, pinned and running apps, window previews, and intelligent
+auto-hide.
 
-See [Dock](common/dock/) for dependencies, build, installation and validation.
-Plasma Wayland is a future target and is not supported yet.
+See [Prychal Dock](common/prychal-dock/) for installation and usage.
 
 ## XFCE
 
