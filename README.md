@@ -25,5 +25,11 @@ See [Layout OSD](xfce/layout-osd/).
 
 ## Project status
 
-These tools are under active development. No repository-wide license has been
-selected yet; select one before publishing a licensed release.
+Prychal Dock and Layout OSD are available for XFCE on X11 and are under active
+development. Visit the [Linux Scripts website](https://vladcraft228.github.io/linux-scripts/)
+for demos and installation guides.
+
+## License
+
+The original code in this repository is licensed under the [MIT License](LICENSE).
+Third-party materials retain their own licenses.
