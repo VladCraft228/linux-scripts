@@ -250,6 +250,25 @@ fn variant(signature: &CStr, text: &str) -> Ptr {
     unsafe { g_variant_parse(signature.as_ptr(), text.as_ptr(), null(), null_mut(), null_mut()) }
 }
 
+pub fn notify(message: &str) -> bool {
+    unsafe {
+        let bus = g_bus_get_sync(2, null_mut(), null_mut()); // G_BUS_TYPE_SESSION
+        if bus.is_null() { return false; }
+        g_dbus_connection_set_exit_on_close(bus, 0);
+        let args = variant(c"(susssasa{sv}i)", &format!(
+            "('Vatra', 0, 'vatra', {}, '', [], {{'transient': <true>}}, 2500)",
+            quoted(message)
+        ));
+        let reply = g_dbus_connection_call_sync(bus, c"org.freedesktop.Notifications".as_ptr(),
+            c"/org/freedesktop/Notifications".as_ptr(), c"org.freedesktop.Notifications".as_ptr(),
+            c"Notify".as_ptr(), args, c"(u)".as_ptr(), 0, 1500, null_mut(), null_mut());
+        release(args);
+        release(reply);
+        g_object_unref(bus);
+        !reply.is_null()
+    }
+}
+
 unsafe fn release(value: Ptr) {
     if !value.is_null() { g_variant_unref(value); }
 }

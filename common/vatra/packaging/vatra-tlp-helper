@@ -292,7 +292,8 @@ def plan_token(before, current, desired, profile, profiles):
 
 
 def limit_label(value):
-    return f"{int(value) / 1000:g} MHz"
+    mhz = f"{int(value) / 1000:.3f}".rstrip("0").rstrip(".")
+    return f"{mhz} MHz"
 
 
 def preview(source, requested, battery, mode, single_mode, caps):

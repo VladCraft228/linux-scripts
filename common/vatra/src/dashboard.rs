@@ -129,6 +129,12 @@ pub struct Review {
 }
 
 impl Review {
+    pub fn has_changes(&self) -> bool {
+        self.rows.iter().any(|[_, current_epp, next_epp, current_cap, next_cap]| {
+            current_epp != next_epp || current_cap != next_cap
+        })
+    }
+
     pub fn load(title: &str, arguments: &[&str], helper: &str) -> Result<Self, String> {
         if !std::path::Path::new(helper).is_file() {
             return Err("Install the Vatra TLP helper to preview changes.".into());

@@ -38,6 +38,8 @@ extern "C" {
     pub fn g_dbus_connection_unregister_object(bus: Ptr, id: c_uint) -> c_int;
     pub fn g_dbus_connection_call(bus: Ptr, name: Str, path: Str, interface: Str, method: Str,
         args: Ptr, reply: VariantType, flags: c_uint, timeout: c_int, cancel: Ptr, callback: Option<Async>, data: Ptr);
+    pub fn g_dbus_connection_call_sync(bus: Ptr, name: Str, path: Str, interface: Str, method: Str,
+        args: Ptr, reply: VariantType, flags: c_uint, timeout: c_int, cancel: Ptr, error: *mut Ptr) -> Ptr;
     pub fn g_dbus_connection_call_finish(bus: Ptr, result: Ptr, error: *mut Ptr) -> Ptr;
     pub fn g_dbus_connection_signal_subscribe(bus: Ptr, sender: Str, interface: Str, member: Str,
         path: Str, arg0: Str, flags: c_uint, callback: Option<Signal>, data: Ptr,

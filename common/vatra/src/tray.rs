@@ -1,6 +1,8 @@
 #[path = "tray/sni.rs"]
 mod sni;
 
+pub use sni::notify;
+
 use crate::{appearance::Appearance, profiles::Profile, telemetry::Snapshot};
 use std::{
     env, fs,

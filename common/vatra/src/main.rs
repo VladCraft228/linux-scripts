@@ -208,21 +208,38 @@ impl App {
         }
     }
 
-    fn choose_quick_mode(&mut self, mode: Profile) {
+    fn choose_quick_mode(&mut self, mode: Profile, from_tray: Option<&ActiveEventLoop>) {
         if self.apply_result.is_some() {
             return;
         }
         self.diagnostics = Some(self.read_diagnostics());
         let diagnostics = self.diagnostics.as_ref().expect("diagnostics refreshed");
-        match diagnostics.quick_target(mode, &self.snapshot, &self.presets) {
-            Ok(args) => {
+        let active = diagnostics.active_mode(&self.snapshot, &self.presets) == Some(mode);
+        let result = diagnostics.quick_target(mode, &self.snapshot, &self.presets)
+            .map_err(str::to_owned)
+            .and_then(|args| {
                 let caps: Vec<_> = PowerSource::ALL.into_iter().filter_map(|source| {
                     self.presets.cap(mode, source).map(|khz| format!("--cap-{}={khz}", source.label()))
                 }).collect();
                 let args: Vec<_> = args.into_iter().chain(caps.iter().map(String::as_str)).collect();
-                self.preview_apply(mode.name(), &args);
+                load_review(mode.name(), &args)
+            });
+        if matches!(&result, Ok(review) if active && !review.has_changes()) {
+            self.review = None;
+            let message = format!("{} is already active.", mode.name());
+            self.apply_message.clone_from(&message);
+            let proxy = self.proxy.clone();
+            std::thread::spawn(move || {
+                if !tray::notify(&message) {
+                    let _ = proxy.send_event(AppEvent::NoticeFallback(message));
+                }
+            });
+        } else {
+            if let Some(event_loop) = from_tray {
+                self.open_page(Page::Modes);
+                self.show_window(event_loop);
             }
-            Err(error) => self.apply_message = error.into(),
+            self.set_review(result);
         }
         if let Some(window) = &self.window { window.request_redraw(); }
     }
@@ -312,7 +329,7 @@ impl App {
         let Some((index, diagnostics)) = self.profile.zip(self.diagnostics.as_ref()) else { return };
         let profile = Profile::ALL[index];
         if !profile.editable() {
-            self.choose_quick_mode(profile);
+            self.choose_quick_mode(profile, None);
             return;
         }
         let Some(target) = diagnostics.preview_source(self.preview_source) else { return };
@@ -330,16 +347,19 @@ impl App {
     }
 
     fn preview_apply(&mut self, title: &str, args: &[&str]) {
+        self.set_review(load_review(title, args));
+        if let Some(window) = &self.window { window.request_redraw(); }
+    }
+
+    fn set_review(&mut self, result: Result<dashboard::Review, String>) {
         self.review = None;
-        self.apply_message = match tlp_helper().ok_or_else(|| "Install the Vatra TLP helper to preview changes.".to_owned())
-            .and_then(|helper| dashboard::Review::load(title, args, helper)) {
+        self.apply_message = match result {
             Ok(review) => {
                 self.review = Some(review);
                 String::new()
             }
             Err(error) => error,
         };
-        if let Some(window) = &self.window { window.request_redraw(); }
     }
 
     fn finish_review(&mut self, apply: bool) {
@@ -482,6 +502,11 @@ fn page(auxiliary: Option<Page>, profile: Option<usize>, advanced: bool) -> Page
     })
 }
 
+fn load_review(title: &str, args: &[&str]) -> Result<dashboard::Review, String> {
+    let helper = tlp_helper().ok_or("Install the Vatra TLP helper to preview changes.")?;
+    dashboard::Review::load(title, args, helper)
+}
+
 fn active_mode(diagnostics: Option<&Diagnostics>, snapshot: &Snapshot, presets: &Presets) -> Option<Profile> {
     diagnostics.and_then(|state| state.active_mode(snapshot, presets))
 }
@@ -491,6 +516,7 @@ const TRAY_UNAVAILABLE: &str = "Tray unavailable. Waiting for a StatusNotifierIt
 enum AppEvent {
     Instance(instance::Request),
     Tray(u64, tray::Action),
+    NoticeFallback(String),
 }
 
 impl ApplicationHandler<AppEvent> for App {
@@ -502,6 +528,13 @@ impl ApplicationHandler<AppEvent> for App {
                 self.show_window(event_loop);
             }
             AppEvent::Instance(instance::Request::Background) => {}
+            AppEvent::NoticeFallback(message) => {
+                if self.window.is_none() && self.apply_message == message {
+                    self.open_page(Page::Modes);
+                    self.apply_message = message;
+                    self.show_window(event_loop);
+                }
+            }
             AppEvent::Tray(generation, action) if generation == self.tray_generation => {
                 let Some(action) = self.tray.as_mut().and_then(|tray| tray.handle(action)) else {
                     // Bound the wait for a host even during a backend migration.
@@ -527,12 +560,7 @@ impl ApplicationHandler<AppEvent> for App {
                             self.show_window(event_loop);
                         }
                     }
-                    tray::Action::Mode(mode) => {
-                        self.advanced = false;
-                        self.select(Some(0));
-                        self.show_window(event_loop);
-                        self.choose_quick_mode(mode);
-                    }
+                    tray::Action::Mode(mode) => self.choose_quick_mode(mode, Some(event_loop)),
                     tray::Action::Autostart(value) => {
                         if let Err(error) = tray::set_autostart(value) {
                             self.apply_message = format!("Could not change autostart: {error}");
@@ -597,7 +625,7 @@ impl ApplicationHandler<AppEvent> for App {
                     Key::Character("a" | "A") => self.toggle_advanced(),
                     Key::Character(key @ ("1" | "2" | "3" | "4")) if self.profile.is_some() && !self.advanced => {
                         let index = usize::from(key.as_bytes()[0] - b'1');
-                        self.choose_quick_mode(Profile::QUICK[index]);
+                        self.choose_quick_mode(Profile::QUICK[index], None);
                     }
                     Key::Character("1") if self.profile.is_some() => self.select_source(PowerSource::Ac),
                     Key::Character("2") if self.profile.is_some() => self.select_source(PowerSource::Battery),
@@ -714,7 +742,7 @@ impl ApplicationHandler<AppEvent> for App {
                         }
                         None if self.profile.is_some() => {
                             if let Some(mode) = dashboard::quick_mode_hit(width, x, y) {
-                                self.choose_quick_mode(mode);
+                                self.choose_quick_mode(mode, None);
                             }
                         }
                         None => {
