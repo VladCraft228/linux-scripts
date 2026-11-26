@@ -1,9 +1,13 @@
+#[path = "tray/sni.rs"]
+mod sni;
+
 use crate::{appearance::Appearance, profiles::Profile, telemetry::Snapshot};
 use std::{
     env, fs,
     io::{self, BufRead, BufReader, Write},
     path::PathBuf,
     process::{Child, ChildStdin, Command, Stdio},
+    sync::Arc,
     thread,
 };
 
@@ -15,7 +19,13 @@ pub enum Action {
     Disable,
     Quit,
     Exited,
+    Watcher(bool),
+    SniReady(bool),
+    Fallback(u64, Box<Action>),
 }
+
+type Sender = Arc<dyn Fn(Action) + Send + Sync>;
+
 
 impl Action {
     fn parse(value: &str) -> Option<Self> {
@@ -32,14 +42,13 @@ impl Action {
     }
 }
 
-pub struct Tray {
+struct Fallback {
     child: Child,
     input: ChildStdin,
     previous: String,
-    pub embedded: bool,
 }
 
-impl Tray {
+impl Fallback {
     pub fn spawn(mut send: impl FnMut(Action) + Send + 'static) -> io::Result<Self> {
         if env::var_os("DISPLAY").is_none() || env::var("XDG_SESSION_TYPE").as_deref() == Ok("wayland") {
             return Err(io::Error::new(io::ErrorKind::Unsupported, "Vatra's tray requires an X11 session"));
@@ -63,10 +72,89 @@ impl Tray {
             let _ = child.wait();
             return Err(error);
         }
-        Ok(Self { child, input, previous: String::new(), embedded: false })
+        Ok(Self { child, input, previous: String::new() })
     }
 
-    pub fn invalidate(&mut self) { self.previous.clear(); }
+    fn update(&mut self, update: &str) {
+        if update != self.previous && self.input.write_all(update.as_bytes()).is_ok() {
+            self.previous = update.to_owned();
+        }
+    }
+}
+
+impl Drop for Fallback {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+pub struct Tray {
+    sni: sni::Worker,
+    fallback: Option<Fallback>,
+    sender: Sender,
+    watcher: bool,
+    fallback_epoch: u64,
+    previous: String,
+    pub embedded: bool,
+}
+
+impl Tray {
+    pub fn spawn(send: impl Fn(Action) + Send + Sync + 'static) -> io::Result<Self> {
+        let sender: Sender = Arc::new(send);
+        Ok(Self {
+            sni: sni::Worker::spawn(sender.clone())?, sender, fallback: None,
+            watcher: false, fallback_epoch: 0, previous: String::new(), embedded: false,
+        })
+    }
+
+    fn start_fallback(&mut self) {
+        if self.fallback.is_some() { return; }
+        self.fallback_epoch = self.fallback_epoch.wrapping_add(1);
+        let epoch = self.fallback_epoch;
+        let send = self.sender.clone();
+        if let Ok(mut fallback) = Fallback::spawn(move |action| send(Action::Fallback(epoch, Box::new(action)))) {
+            if !self.previous.is_empty() { fallback.update(&self.previous); }
+            self.fallback = Some(fallback);
+        }
+    }
+
+    pub fn handle(&mut self, action: Action) -> Option<Action> {
+        match action {
+            Action::Watcher(available) => {
+                if !available && !self.watcher && self.fallback.is_some() {
+                    return None;
+                }
+                self.watcher = available;
+                if available {
+                    self.fallback_epoch = self.fallback_epoch.wrapping_add(1);
+                    self.fallback = None; // Kill and reap before registering SNI.
+                    self.sni.enable();
+                    // Keep a hidden window hidden during a short, normal migration.
+                    self.embedded = false;
+                    None
+                } else {
+                    self.start_fallback();
+                    Some(Action::Embedded(false))
+                }
+            }
+            Action::SniReady(true) if self.watcher => Some(Action::Embedded(true)),
+            Action::SniReady(false) if self.watcher => {
+                self.start_fallback();
+                Some(Action::Embedded(false))
+            }
+            Action::SniReady(_) => None,
+            Action::Fallback(epoch, action) if epoch == self.fallback_epoch => match *action {
+                Action::Exited => {
+                    self.fallback = None;
+                    Some(Action::Embedded(false))
+                }
+                action => Some(action),
+            },
+            Action::Fallback(..) => None,
+            action => Some(action),
+        }
+    }
 
     pub fn update(&mut self, snapshot: &Snapshot, mode: Option<Profile>, ready: bool, message: &str, appearance: Appearance) {
         let mut details = Vec::new();
@@ -94,16 +182,13 @@ impl Tray {
             u8::from(charging), u8::from(ready), u8::from(autostart_enabled()),
             appearance.hex(), appearance.percent, appearance.bolt,
             if message.is_empty() { String::new() } else { format!("\\n{message}") });
-        if update != self.previous && self.input.write_all(update.as_bytes()).is_ok() {
+        if update != self.previous {
+            self.sni.update(update.clone());
             self.previous = update;
         }
-    }
-}
-
-impl Drop for Tray {
-    fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        if let Some(fallback) = self.fallback.as_mut() {
+            fallback.update(&self.previous);
+        }
     }
 }
 

@@ -30,7 +30,9 @@ jobs:
           apt-get update
           apt-get install -y --no-install-recommends \
             build-essential ca-certificates curl git pkg-config dpkg-dev \
-            libxkbcommon-dev libwayland-dev desktop-file-utils python3
+            libxkbcommon-dev libwayland-dev libglib2.0-dev desktop-file-utils fontconfig fonts-dejavu-core \
+            python3 python3-gi gir1.2-gtk-3.0 dbus-daemon libglib2.0-bin \
+            xvfb xauth xdotool trayer weston
       - uses: actions/checkout@v4
       - name: Install Rust
         working-directory: .
@@ -42,6 +44,13 @@ jobs:
         run: |
           cargo test --locked
           python3 -m py_compile packaging/vatra-tlp-helper
+      - name: Test SNI on an isolated session bus
+        run: dbus-run-session -- env VATRA_TEST_SNI=1 cargo test --locked isolated_sni_registration_and_recovery
+      - name: Smoke test X11 and Wayland
+        run: |
+          cargo build --locked --features test-support
+          dbus-run-session -- xvfb-run -a bash tests/smoke.sh x11 target/debug/vatra
+          dbus-run-session -- bash tests/smoke.sh wayland target/debug/vatra
       - name: Build and inspect package
         run: |
           bash packaging/build-deb.sh

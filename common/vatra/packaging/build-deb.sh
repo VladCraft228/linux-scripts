@@ -13,6 +13,11 @@ if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     exit 1
 fi
 
+if ! pkg-config --exists gio-2.0; then
+    echo "Install libglib2.0-dev to build Vatra." >&2
+    exit 1
+fi
+
 # Build for the current Debian host using the committed Cargo.lock.
 cargo build --release --locked --target-dir "$stage/target"
 install -D -m 0755 "$stage/target/release/vatra" "$binary"

@@ -28,8 +28,18 @@ use winit::{
 
 const SAMPLE_INTERVAL: Duration = Duration::from_secs(2);
 fn tlp_helper() -> Option<&'static str> {
+    #[cfg(feature = "test-support")]
+    if std::env::var_os("VATRA_TEST_SYSFS").is_some() { return None; }
     ["/usr/libexec/vatra-tlp-helper", "/usr/local/libexec/vatra-tlp-helper"]
         .into_iter().find(|path| Path::new(path).is_file())
+}
+
+fn read_snapshot() -> Snapshot {
+    #[cfg(feature = "test-support")]
+    if let Some(root) = std::env::var_os("VATRA_TEST_SYSFS") {
+        return Snapshot::read(Path::new(&root));
+    }
+    Snapshot::read(Path::new("/sys"))
 }
 
 struct App {
@@ -67,7 +77,7 @@ struct App {
 
 impl App {
     fn sample(&mut self) {
-        let snapshot = Snapshot::read(Path::new("/sys"));
+        let snapshot = read_snapshot();
         if snapshot.external_power != self.snapshot.external_power {
             self.power_refresh_attempts = 3;
             self.review = None;
@@ -476,6 +486,8 @@ fn active_mode(diagnostics: Option<&Diagnostics>, snapshot: &Snapshot, presets: 
     diagnostics.and_then(|state| state.active_mode(snapshot, presets))
 }
 
+const TRAY_UNAVAILABLE: &str = "Tray unavailable. Waiting for a StatusNotifierItem host or an X11 notification area.";
+
 enum AppEvent {
     Instance(instance::Request),
     Tray(u64, tray::Action),
@@ -491,7 +503,13 @@ impl ApplicationHandler<AppEvent> for App {
             }
             AppEvent::Instance(instance::Request::Background) => {}
             AppEvent::Tray(generation, action) if generation == self.tray_generation => {
-                if let Some(tray) = &mut self.tray { tray.invalidate(); }
+                let Some(action) = self.tray.as_mut().and_then(|tray| tray.handle(action)) else {
+                    // Bound the wait for a host even during a backend migration.
+                    if self.tray.as_ref().is_some_and(|tray| !tray.embedded) {
+                        self.tray_deadline = Some(Instant::now() + Duration::from_secs(5));
+                    }
+                    return;
+                };
                 match action {
                     tray::Action::Open => {
                         self.select(None);
@@ -501,6 +519,9 @@ impl ApplicationHandler<AppEvent> for App {
                         if let Some(tray) = &mut self.tray { tray.embedded = embedded; }
                         if embedded {
                             self.tray_deadline = None;
+                            if self.apply_message == TRAY_UNAVAILABLE {
+                                self.apply_message.clear();
+                            }
                         } else if self.tray_deadline.is_none() {
                             self.tray_deadline = Some(Instant::now() + Duration::from_secs(5));
                             self.show_window(event_loop);
@@ -526,11 +547,7 @@ impl ApplicationHandler<AppEvent> for App {
                         }
                     }
                     tray::Action::Quit => event_loop.exit(),
-                    tray::Action::Exited => {
-                        self.remove_tray();
-                        self.apply_message = "Tray unavailable. Check the X11 session and GTK tray dependencies.".into();
-                        self.show_window(event_loop);
-                    }
+                    tray::Action::Watcher(_) | tray::Action::SniReady(_) | tray::Action::Fallback(..) | tray::Action::Exited => {}
                 }
                 self.update_tray();
             }
@@ -751,8 +768,8 @@ impl ApplicationHandler<AppEvent> for App {
         }
         let now = Instant::now();
         if self.tray_deadline.is_some_and(|deadline| now >= deadline) {
-            self.remove_tray();
-            self.apply_message = "Add Notification Area to the XFCE panel to use the tray.".into();
+            self.tray_deadline = None;
+            self.apply_message = TRAY_UNAVAILABLE.into();
             self.show_window(event_loop);
             if let Some(window) = &self.window { window.request_redraw(); }
         }
@@ -795,7 +812,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         window: None,
         canvas: None,
         dashboard: Dashboard::new()?,
-        snapshot: Snapshot::read(Path::new("/sys")),
+        snapshot: read_snapshot(),
         history: History::load(),
         next_sample: Instant::now(),
         error: None,

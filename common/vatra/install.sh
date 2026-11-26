@@ -34,6 +34,10 @@ desktop_argument() {
 
 exec_arg=$(desktop_argument "$bin")
 command -v fc-match >/dev/null || { echo "Fontconfig (fc-match) is required." >&2; exit 1; }
+if ! pkg-config --exists gio-2.0; then
+    echo "GIO build files are required (Debian/MX: libglib2.0-dev; Arch: glib2)." >&2
+    exit 1
+fi
 cargo build --release --locked
 mkdir -p -- "$(dirname -- "$bin")" "$applications" "$icons" "$libexec"
 desktop_tmp=$(mktemp "$applications/.vatra.XXXXXX")

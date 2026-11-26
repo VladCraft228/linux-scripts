@@ -1,0 +1,43 @@
+<node>
+  <interface name="org.kde.StatusNotifierItem">
+    <property name="Category" type="s" access="read"/>
+    <property name="Id" type="s" access="read"/>
+    <property name="Title" type="s" access="read"/>
+    <property name="Status" type="s" access="read"/>
+    <property name="WindowId" type="i" access="read"/>
+    <property name="IconName" type="s" access="read"/>
+    <property name="IconPixmap" type="a(iiay)" access="read"/>
+    <property name="OverlayIconName" type="s" access="read"/>
+    <property name="OverlayIconPixmap" type="a(iiay)" access="read"/>
+    <property name="AttentionIconName" type="s" access="read"/>
+    <property name="AttentionIconPixmap" type="a(iiay)" access="read"/>
+    <property name="AttentionMovieName" type="s" access="read"/>
+    <property name="ToolTip" type="(sa(iiay)ss)" access="read"/>
+    <property name="ItemIsMenu" type="b" access="read"/>
+    <property name="Menu" type="o" access="read"/>
+    <method name="Activate"><arg type="i"/><arg type="i"/></method>
+    <method name="SecondaryActivate"><arg type="i"/><arg type="i"/></method>
+    <method name="ContextMenu"><arg type="i"/><arg type="i"/></method>
+    <method name="Scroll"><arg type="i"/><arg type="s"/></method>
+    <signal name="NewIcon"/>
+    <signal name="NewStatus"><arg type="s"/></signal>
+    <signal name="NewToolTip"/>
+  </interface>
+  <interface name="com.canonical.dbusmenu">
+    <property name="Version" type="u" access="read"/>
+    <property name="TextDirection" type="s" access="read"/>
+    <property name="Status" type="s" access="read"/>
+    <property name="IconThemePath" type="as" access="read"/>
+    <method name="GetLayout">
+      <arg type="i"/><arg type="i"/><arg type="as"/>
+      <arg type="u" direction="out"/><arg type="(ia{sv}av)" direction="out"/>
+    </method>
+    <method name="GetGroupProperties"><arg type="ai"/><arg type="as"/><arg type="a(ia{sv})" direction="out"/></method>
+    <method name="GetProperty"><arg type="i"/><arg type="s"/><arg type="v" direction="out"/></method>
+    <method name="Event"><arg type="i"/><arg type="s"/><arg type="v"/><arg type="u"/></method>
+    <method name="EventGroup"><arg type="a(isvu)"/><arg type="ai" direction="out"/></method>
+    <method name="AboutToShow"><arg type="i"/><arg type="b" direction="out"/></method>
+    <method name="AboutToShowGroup"><arg type="ai"/><arg type="ai" direction="out"/><arg type="ai" direction="out"/></method>
+    <signal name="LayoutUpdated"><arg type="u"/><arg type="i"/></signal>
+  </interface>
+</node>

@@ -9,10 +9,11 @@ On Debian 13 or an MX Linux release based on Debian 13, install the build tools
 and Fontconfig. Vatra uses the system sans-serif font:
 
 ```sh
-sudo apt install build-essential pkg-config libxkbcommon-dev libwayland-dev fontconfig
+sudo apt install build-essential pkg-config libxkbcommon-dev libwayland-dev libglib2.0-dev fontconfig
 ```
 
-Use a current stable Rust toolchain. From this directory:
+Use a current stable Rust toolchain. On Arch-based systems, the GIO
+linker files are supplied by `glib2`. From this directory:
 
 ```sh
 cargo test
@@ -142,20 +143,44 @@ governor and minimum frequency; all modes still let the CPU scale with load.
 Manual limits must be within the supported range and above the configured minimum.
 
 
-## XFCE tray (X11)
+## System tray on X11 and Wayland
 
-For tray support, install `python3-gi` and `gir1.2-gtk-3.0` and make sure
-the XFCE panel has a Notification Area. Click **Show in tray** in Overview
-or run `~/.local/bin/vatra --enable-tray`. The tray preference is saved for
-the next launch. Close the window to keep Vatra in the tray; the tray menu
-has **Quit Vatra** and **Disable tray**.
+Select **Show in tray** in Overview or launch `vatra --enable-tray`.
+Vatra listens for a StatusNotifierWatcher and a registered host on the
+session D-Bus. It prefers its native Rust StatusNotifierItem with compatible
+hosts, including KDE Plasma and XFCE panels with StatusNotifier support. If
+no compatible host is present in an X11 session, it tries the legacy GTK
+Notification Area. On Debian/MX the legacy backend needs `python3-gi` and
+`gir1.2-gtk-3.0`. On Arch the corresponding packages are
+`python-gobject` and `gtk3`. SNI uses GIO and only needs a session bus and a
+compatible tray host at runtime.
 
-Left-click the indicator to open Overview. Its tooltip shows charge,
-battery state, estimated runtime when available, and the active mode.
-Right-click to switch power modes through the usual TLP authorization or
-enable **Start at login**. Login startup and tray visibility are separate
-preferences. If the indicator cannot attach to the panel, Vatra opens its
-window. The tray is available on X11.
+The tray menu opens the dashboard, reviews TLP profiles, changes login
+startup, disables the tray, or quits Vatra. A tooltip shows battery telemetry
+and the active mode. Closing the window keeps Vatra running when a tray
+backend is available. If the host disappears and no replacement is ready,
+Vatra shows the dashboard and continues listening for a host. The separate
+**Vatra Panel** plugin can still be installed independently.
+
+### Tray testing
+
+The GitHub Actions workflow exercises the SNI service with a fake host on an
+isolated session bus and smoke-tests the dashboard under Xvfb and headless
+Weston. The X11 smoke test also checks GTK embedding with an XEmbed host.
+The compositor tests use a fake sysfs battery. Power controls are disabled
+when this fixture is in use.
+
+```sh
+dbus-run-session -- env VATRA_TEST_SNI=1 cargo test --locked isolated_sni_registration_and_recovery
+cargo build --locked --features test-support
+dbus-run-session -- xvfb-run -a bash tests/smoke.sh x11 target/debug/vatra
+dbus-run-session -- bash tests/smoke.sh wayland target/debug/vatra
+```
+
+Weston checks Wayland window creation and rendering. On Plasma Wayland,
+check the icon and tooltip in the actual panel, left click and menu actions,
+tray-only startup, quitting from the tray, and recovery after restarting
+Plasma Shell. Presentation and activation policy can depend on the shell.
 
 ## Vatra Panel for XFCE
 
