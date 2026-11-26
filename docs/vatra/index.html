@@ -33,26 +33,73 @@
         </div>
       </div>
       <figure class="demo vatra-shot">
-        <div class="power-sample" aria-hidden="true">
-          <div class="sample-header"><span>Vatra</span><span>Overview</span></div>
-          <div class="sample-readings">
-            <div><span>Battery</span><strong>64%</strong><span>On battery</span></div>
-            <div><span>Battery power</span><strong>7.2 W</strong><span>Power draw</span></div>
+        <div class="preview-window" role="img" aria-label="Vatra Overview preview. The Power Saver example shows 9% battery with 37 minutes estimated remaining, a draw of 6.6 watts, a 2789 MHz CPU limit, a 10-minute line graph, and discharge statistics.">
+          <div class="preview-titlebar" aria-hidden="true">
+            <span>Vatra</span>
+            <span class="preview-window-lights"><i></i><i></i><i></i></span>
           </div>
-          <div class="sample-history">
-            <span>Recent power draw</span>
-            <div class="sample-bars">
-              <i style="--level:42%"></i><i style="--level:38%"></i><i style="--level:49%"></i>
-              <i style="--level:48%"></i><i style="--level:55%"></i><i style="--level:77%"></i>
-              <i style="--level:91%"></i><i style="--level:66%"></i><i style="--level:50%"></i>
-              <i style="--level:41%"></i><i style="--level:45%"></i><i style="--level:39%"></i>
-              <i style="--level:46%"></i><i style="--level:48%"></i><i style="--level:42%"></i>
-              <i style="--level:37%"></i><i style="--level:43%"></i><i style="--level:45%"></i>
+          <div class="preview-layout" aria-hidden="true">
+            <div class="preview-sidebar">
+              <span class="preview-brand">Vatra</span>
+              <ul class="preview-nav">
+                <li class="preview-selected">Overview</li>
+                <li>Power modes</li>
+                <li>Advanced</li>
+                <li>Diagnostics</li>
+                <li>Appearance</li>
+                <li>About</li>
+              </ul>
             </div>
-            <div class="sample-time"><span>10 min ago</span><span>Now</span></div>
+            <div class="preview-content">
+              <div class="preview-heading"><span>Overview</span><span class="preview-control">Show in tray</span></div>
+              <div class="preview-readings">
+                <div class="preview-card">
+                  <span class="preview-label">Battery</span>
+                  <div class="preview-charge">
+                    <strong>9%</strong><span class="preview-battery"></span>
+                  </div>
+                  <span class="preview-low">On battery</span>
+                  <p>0h 37m remaining (estimated)</p>
+                  <small>Battery health: 99%</small>
+                </div>
+                <div class="preview-card">
+                  <span class="preview-label">Battery power</span>
+                  <strong class="preview-watts">6.6 W</strong>
+                  <small>Power drawn from battery</small>
+                  <small>Calculated from voltage × current</small>
+                  <small class="preview-limit">CPU frequency limit: 2789 MHz</small>
+                </div>
+              </div>
+              <div class="preview-card preview-mode">
+                <div><small>Power mode</small><strong>Power Saver</strong></div>
+                <span class="preview-control">Change mode</span>
+              </div>
+              <div class="preview-card preview-history">
+                <div class="preview-history-head">
+                  <div><span>Battery power history</span><small>Positive: charging / Negative: discharging</small></div>
+                  <div class="preview-range"><small>10 min</small><span></span></div>
+                </div>
+                <div class="preview-chart">
+                  <div class="preview-axis"><span>0 W</span><span>-5.5 W</span><span>-11 W</span></div>
+                  <svg viewBox="0 0 800 125" preserveAspectRatio="none" aria-hidden="true">
+                    <path class="preview-grid" d="M0 1H800 M0 62.5H800 M0 124H800" />
+                    <path class="preview-line" d="M0 99l8-12 8-7 7 2 8-9 9 2 7-4 9 1 6 9 8 14 8-4 8-6 7-1 8-10 7-2 7 8 8 1 8 10 7 5 8 10 8-2 9-15 9-9 8-3 7 14 11 3 8 5 8-11 8 1 8 4 9-7 8 3 9 8 8 2 7 6 9 1 10 4 9-6 8 5 8-17 8 4 10 4 7 6 9-1 10 4 9 2 9-8 9 2 9-4 9 2 9 2 8-5 8 4 8 9 8 5 10-4 9-1 10-15 9-7 10-6 8 1 10 8 9 4 9 7 9-1 9 1 10-11 9-9 10-7 9 13 8 5 8-4 9-12 8-7 9-3 10-2 9 2 10-4 9-1 8 4 8 7 9-2 9-2 9-4 9 1 10-2 8 2 9 6 56 1" />
+                  </svg>
+                  <div class="preview-time"><span>10 min ago</span><span>Now</span></div>
+                </div>
+              </div>
+              <div class="preview-card preview-stats">
+                <div>Battery discharge · W</div>
+                <div class="preview-stat-grid">
+                  <div><small>1 min · 30 samples</small><strong>Avg 6.3</strong><span>Min 6.1 · Max 6.9</span></div>
+                  <div><small>5 min · 150 samples</small><strong>Avg 7.9</strong><span>Min 5.9 · Max 10.3</span></div>
+                  <div><small>10 min · 299 samples</small><strong>Avg 8.0</strong><span>Min 5.9 · Max 10.3</span></div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
-        <figcaption class="demo-foot">Dashboard illustration with sample data</figcaption>
+        <figcaption class="demo-foot">Vatra on XFCE · Overview recreated in HTML with example readings</figcaption>
       </figure>
     </section>
     <section class="features" aria-labelledby="feature-title">

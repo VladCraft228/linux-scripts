@@ -5,7 +5,41 @@
 .product:hover { border-color: var(--orange); }
 .panel { display: grid; place-items: center; min-height: 220px; }
 .pier { background: linear-gradient(#0b132a33, #0b132a66), url(prychal-dock/assets/pier.webp) center / cover; }
-.vatra-cover { background: radial-gradient(ellipse at 50% 42%, #6c422e, transparent 72%), #211b20; }
+.vatra-cover {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse at 50% 118%, #ffa646 0%, #b14429 17%, #542326 38%, transparent 68%),
+    radial-gradient(ellipse at 52% 73%, #793a36, transparent 62%),
+    linear-gradient(155deg, #171922, #281920 54%, #160f16);
+}
+.vatra-cover::before, .vatra-cover::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+}
+.vatra-cover::before {
+  background:
+    radial-gradient(circle at 13% 77%, #ffb767 0 1px, transparent 2px),
+    radial-gradient(circle at 22% 48%, #ffcda1 0 1px, transparent 3px),
+    radial-gradient(circle at 27% 69%, #ff783c 0 2px, transparent 3px),
+    radial-gradient(circle at 34% 29%, #f07249 0 1px, transparent 3px),
+    radial-gradient(circle at 41% 83%, #ffd2a2 0 1px, transparent 3px),
+    radial-gradient(circle at 59% 26%, #ff8054 0 1px, transparent 3px),
+    radial-gradient(circle at 66% 79%, #ffd28e 0 1px, transparent 2px),
+    radial-gradient(circle at 72% 56%, #ffa25a 0 1px, transparent 3px),
+    radial-gradient(circle at 80% 34%, #db734e 0 1px, transparent 2px),
+    radial-gradient(circle at 86% 67%, #ff9b4e 0 2px, transparent 3px);
+}
+.vatra-cover::after {
+  background:
+    radial-gradient(ellipse at 50% 142%, transparent 0 44%, #e7824b40 44.4% 44.8%, transparent 45.2% 53%, #f3854c27 53.4% 53.7%, transparent 54%),
+    repeating-linear-gradient(155deg, transparent 0 18px, #ffb68610 19px, transparent 20px 35px);
+  mask-image: linear-gradient(transparent, #000 62%);
+}
+.vatra-cover img { filter: drop-shadow(0 10px 24px #150a0c) drop-shadow(0 0 17px #ff8c4d75); }
 .keyboard { background: radial-gradient(ellipse at 65% 18%, #415a79, transparent 62%), linear-gradient(125deg, #161d38, #29334e); }
 .osd { display: grid; place-content: center; text-align: center; width: 180px; height: 110px; line-height: 1.15; border-radius: 18px; background: #131929dd; border: 1px solid #9eafd65c; box-shadow: 0 16px 40px #080e2488; }
 .osd strong { font-size: 2.4rem; margin-bottom: 5px; }
