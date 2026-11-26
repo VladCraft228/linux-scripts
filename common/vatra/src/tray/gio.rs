@@ -4,6 +4,8 @@ use std::ffi::{c_char, c_int, c_uint, c_void};
 
 pub type Ptr = *mut c_void;
 pub type Str = *const c_char;
+// GLib represents a GVariantType with a pointer to its type string.
+pub type VariantType = *const c_char;
 pub type Callback = unsafe extern "C" fn(Ptr) -> c_int;
 pub type Async = unsafe extern "C" fn(Ptr, Ptr, Ptr);
 pub type NameAppeared = unsafe extern "C" fn(Ptr, Str, Str, Ptr);
@@ -35,7 +37,7 @@ extern "C" {
         free: Option<unsafe extern "C" fn(Ptr)>, error: *mut Ptr) -> c_uint;
     pub fn g_dbus_connection_unregister_object(bus: Ptr, id: c_uint) -> c_int;
     pub fn g_dbus_connection_call(bus: Ptr, name: Str, path: Str, interface: Str, method: Str,
-        args: Ptr, reply: Ptr, flags: c_uint, timeout: c_int, cancel: Ptr, callback: Option<Async>, data: Ptr);
+        args: Ptr, reply: VariantType, flags: c_uint, timeout: c_int, cancel: Ptr, callback: Option<Async>, data: Ptr);
     pub fn g_dbus_connection_call_finish(bus: Ptr, result: Ptr, error: *mut Ptr) -> Ptr;
     pub fn g_dbus_connection_signal_subscribe(bus: Ptr, sender: Str, interface: Str, member: Str,
         path: Str, arg0: Str, flags: c_uint, callback: Option<Signal>, data: Ptr,
@@ -63,7 +65,7 @@ extern "C" {
     pub fn g_source_attach(source: Ptr, context: Ptr) -> c_uint;
     pub fn g_source_destroy(source: Ptr);
     pub fn g_source_unref(source: Ptr);
-    pub fn g_variant_parse(ty: Str, text: Str, limit: Str, end: *mut Str, error: *mut Ptr) -> Ptr;
+    pub fn g_variant_parse(ty: VariantType, text: Str, limit: Str, end: *mut Str, error: *mut Ptr) -> Ptr;
     pub fn g_variant_get_child_value(value: Ptr, position: usize) -> Ptr;
     pub fn g_variant_n_children(value: Ptr) -> usize;
     pub fn g_variant_get_variant(value: Ptr) -> Ptr;
