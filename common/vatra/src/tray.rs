@@ -1,7 +1,7 @@
 #[path = "tray/sni.rs"]
 mod sni;
 
-pub use sni::notify;
+pub use sni::{notify, xfce_panel_visible};
 
 use crate::{appearance::Appearance, profiles::Profile, telemetry::Snapshot};
 use std::{
@@ -158,6 +158,14 @@ impl Tray {
         }
     }
 
+    pub fn active_status(&self) -> Option<&'static str> {
+        self.embedded.then_some(if self.fallback.is_some() {
+            "Active: System tray (GTK / X11)"
+        } else {
+            "Active: System tray (SNI / D-Bus)"
+        })
+    }
+
     pub fn update(&mut self, snapshot: &Snapshot, mode: Option<Profile>, ready: bool, message: &str, appearance: Appearance) {
         let mut details = Vec::new();
         let mut level = "-".to_owned();
@@ -200,12 +208,61 @@ fn config_dir() -> io::Result<PathBuf> {
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "No user configuration directory"))
 }
 
-pub fn enabled() -> bool {
-    config_dir().is_ok_and(|dir| dir.join("vatra/tray.enabled").is_file())
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Indicator {
+    Off,
+    Tray,
+    XfcePanel,
 }
 
-pub fn set_enabled(value: bool) -> io::Result<()> {
-    set_file(config_dir()?.join("vatra/tray.enabled"), value.then_some(""))
+impl Indicator {
+    pub const ALL: [Self; 3] = [Self::Off, Self::Tray, Self::XfcePanel];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Off => "Off",
+            Self::Tray => "System tray",
+            Self::XfcePanel => "Vatra Panel",
+        }
+    }
+
+    pub fn load(panel_available: bool) -> Self {
+        let Ok(dir) = config_dir() else { return Self::Off };
+        let dir = dir.join("vatra");
+        let preference = fs::read_to_string(dir.join("indicator")).ok();
+        Self::resolve(preference.as_deref(), dir.join("tray.enabled").is_file(), panel_available)
+    }
+
+    fn resolve(preference: Option<&str>, legacy_tray: bool, panel_available: bool) -> Self {
+        match preference.map(str::trim) {
+            Some("tray") => Self::Tray,
+            Some("xfce-panel") if panel_available => Self::XfcePanel,
+            Some("xfce-panel") => Self::Tray,
+            Some("off") => Self::Off,
+            _ if legacy_tray => Self::Tray,
+            _ if panel_available => Self::XfcePanel,
+            _ => Self::Off,
+        }
+    }
+
+    pub fn save(self) -> io::Result<()> {
+        let value = match self {
+            Self::Off => "off",
+            Self::Tray => "tray",
+            Self::XfcePanel => "xfce-panel",
+        };
+        set_file(config_dir()?.join("vatra/indicator"), Some(value))
+    }
+}
+
+pub fn xfce_panel_available() -> bool {
+    let xfce = ["XDG_CURRENT_DESKTOP", "DESKTOP_SESSION"].into_iter()
+        .filter_map(|key| env::var(key).ok())
+        .any(|name| name.split([':', ';']).any(|part| part.eq_ignore_ascii_case("xfce")));
+    xfce && [
+        "/usr/share/xfce4/panel/plugins/vatra-panel.desktop",
+        "/usr/local/share/xfce4/panel/plugins/vatra-panel.desktop",
+    ].into_iter().any(|path| std::path::Path::new(path).is_file())
 }
 
 pub fn autostart_enabled() -> bool {
@@ -237,4 +294,24 @@ fn set_file(path: PathBuf, contents: Option<&str>) -> io::Result<()> {
     fs::remove_file(path).or_else(|err| {
         if err.kind() == io::ErrorKind::NotFound { Ok(()) } else { Err(err) }
     })
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::Indicator;
+
+    #[test]
+    fn explicit_indicator_overrides_legacy_tray_marker() {
+        assert!(Indicator::resolve(Some("xfce-panel"), true, true) == Indicator::XfcePanel);
+        assert!(Indicator::resolve(Some("off"), true, true) == Indicator::Off);
+        assert!(Indicator::resolve(Some("xfce-panel"), true, false) == Indicator::Tray);
+    }
+
+    #[test]
+    fn legacy_indicator_choice_survives_upgrade() {
+        assert!(Indicator::resolve(None, true, true) == Indicator::Tray);
+        assert!(Indicator::resolve(None, false, true) == Indicator::XfcePanel);
+        assert!(Indicator::resolve(None, false, false) == Indicator::Off);
+    }
 }

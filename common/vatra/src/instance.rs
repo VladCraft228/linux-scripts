@@ -1,3 +1,4 @@
+use crate::profiles::Profile;
 use std::{
     env,
     fs::{self, DirBuilder, File, OpenOptions},
@@ -28,6 +29,49 @@ pub enum Request {
     Activate = 1,
     EnableTray = 2,
     Background = 3,
+    IndicatorSettings = 4,
+    Automatic = 5,
+    Balanced = 6,
+    Performance = 7,
+    PowerSaver = 8,
+    Quit = 9,
+}
+
+impl Request {
+    pub fn from_mode_id(id: &str) -> Option<Self> {
+        match id {
+            "automatic" => Some(Self::Automatic),
+            "balanced" => Some(Self::Balanced),
+            "performance" => Some(Self::Performance),
+            "power-saver" => Some(Self::PowerSaver),
+            _ => None,
+        }
+    }
+
+    pub fn mode(self) -> Option<Profile> {
+        match self {
+            Self::Automatic => Some(Profile::Automatic),
+            Self::Balanced => Some(Profile::Balanced),
+            Self::Performance => Some(Profile::Performance),
+            Self::PowerSaver => Some(Profile::PowerSaver),
+            _ => None,
+        }
+    }
+
+    fn decode(byte: u8) -> Option<Self> {
+        match byte {
+            1 => Some(Self::Activate),
+            2 => Some(Self::EnableTray),
+            3 => Some(Self::Background),
+            4 => Some(Self::IndicatorSettings),
+            5 => Some(Self::Automatic),
+            6 => Some(Self::Balanced),
+            7 => Some(Self::Performance),
+            8 => Some(Self::PowerSaver),
+            9 => Some(Self::Quit),
+            _ => None,
+        }
+    }
 }
 
 pub struct Instance {
@@ -58,6 +102,8 @@ impl Instance {
         loop {
             // The file stays open in Instance until the process stops listening.
             if unsafe { flock(lock.as_raw_fd(), LOCK_EX | LOCK_NB) } == 0 {
+                // A quit request never starts a new instance.
+                if matches!(request, Request::Quit) { return Ok(None); }
                 match fs::remove_file(&socket_path) {
                     Ok(()) => {}
                     Err(error) if error.kind() == io::ErrorKind::NotFound => {}
@@ -85,14 +131,10 @@ impl Instance {
     pub fn listen(&mut self, mut activate: impl FnMut(Request) -> bool + Send + 'static) -> io::Result<()> {
         let socket = self.socket.take().expect("instance listener starts once");
         thread::Builder::new().name("vatra-activation".into()).spawn(move || {
-            let mut message = [0; 1];
+            let mut message = [0; 2];
             while let Ok(size) = socket.recv(&mut message) {
-                let request = match (size, message[0]) {
-                    (1, 1) => Request::Activate,
-                    (1, 2) => Request::EnableTray,
-                    (1, 3) => Request::Background,
-                    _ => continue,
-                };
+                if size != 1 { continue; }
+                let Some(request) = Request::decode(message[0]) else { continue };
                 if !activate(request) { break; }
             }
         })?;
@@ -121,4 +163,21 @@ fn verify_private_dir(path: &std::path::Path, uid: u32) -> io::Result<()> {
         return Err(io::Error::new(io::ErrorKind::PermissionDenied, "Vatra needs a private runtime directory"));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn panel_modes_round_trip_through_single_instance_protocol() {
+        for mode in Profile::QUICK {
+            let request = Request::from_mode_id(mode.id()).unwrap();
+            assert_eq!(Request::decode(request as u8).and_then(Request::mode), Some(mode));
+        }
+        assert!(Request::from_mode_id("custom").is_none());
+        assert!(Request::decode(255).is_none());
+        assert!(matches!(Request::decode(4), Some(Request::IndicatorSettings)));
+        assert!(matches!(Request::decode(9), Some(Request::Quit)));
+    }
 }

@@ -32,28 +32,32 @@ raised or highlighted. Rerun the installer after
 updating the source. Run `bash uninstall.sh` to remove the launcher and
 executable. History and the optional system helper can be removed separately.
 
-## Build a Debian package
+## Install or update the Debian packages
 
 On Debian 13 or MX Linux based on Debian 13, install `dpkg-dev` and
-`desktop-file-utils` in addition to the build dependencies above. From
-`common/vatra`:
+`desktop-file-utils` in addition to the build dependencies above. On XFCE,
+also install `libxfce4panel-2.0-dev`, `libxfce4ui-2-dev`, and `libgtk-3-dev`. Quit any running
+Vatra instance. From `common/vatra`, use one command to build and install:
 
 ```sh
-bash packaging/build-deb.sh
-sudo apt install ./dist/vatra_0.1.0_$(dpkg --print-architecture).deb
-/usr/bin/vatra
+bash packaging/install-deb.sh
 ```
 
-The package installs a system-wide launcher and the optional TLP helper.
-For TLP controls, install TLP 1.8, Python 3, and pkexec, and run a graphical
-polkit agent. Installation does not change your TLP configuration or
-enable services. If switching from `install.sh` to the package, run
-`bash uninstall.sh` to remove the user launcher, which would otherwise
-take precedence over the packaged launcher.
+The installer includes Vatra Panel on XFCE. Pass `--tray-only` for the main
+package alone, or `--with-xfce-panel` to include the XFCE plugin explicitly.
+To install a matching set of already built packages, such as the extracted
+`vatra-debian-trixie` CI artifact, pass `--from-dir /absolute/path/to/packages`.
+Use `/usr/bin/vatra --version` to check the installed package build.
+Open **Vatra** from the application menu after updating. If an older
+Vatra Panel is already loaded, reload XFCE Panel once with `xfce4-panel -r`.
 
-The GitHub Actions workflow runs the Rust tests on Debian 13 and uploads
-the package as a build artifact. Commit `Cargo.lock` with the source so that
-local and CI builds use the same dependency versions.
+For TLP controls, install TLP 1.8, Python 3, and pkexec, and run a graphical
+polkit agent. The package provides the optional helper. If switching from
+the user-local installer to the Debian package, run `bash uninstall.sh` to
+remove the old executable and launcher.
+
+The GitHub Actions workflow runs the tests on Debian 13 and groups the
+application and XFCE panel packages in one build artifact.
 
 ## Readings
 
@@ -145,7 +149,8 @@ Manual limits must be within the supported range and above the configured minimu
 
 ## System tray on X11 and Wayland
 
-Select **Show in tray** in Overview or launch `vatra --enable-tray`.
+Select **Appearance → Battery indicator → System tray** or launch
+`vatra --enable-tray`.
 Vatra listens for a StatusNotifierWatcher and a registered host on the
 session D-Bus. It prefers its native Rust StatusNotifierItem with compatible
 hosts, including KDE Plasma and XFCE panels with StatusNotifier support. If
@@ -184,23 +189,27 @@ Plasma Shell. Presentation and activation policy can depend on the shell.
 
 ## Vatra Panel for XFCE
 
-Vatra Panel is an optional XFCE panel plugin. It displays a battery icon from
-the system theme and the percentage as regular panel text. It listens for
-UPower battery updates and opens the Vatra dashboard when clicked.
+Vatra Panel displays a battery icon with an optional full-size percentage.
+It uses UPower for battery updates and opens Vatra when clicked. Right-click
+to open the dashboard, review a power mode, open indicator settings, or quit
+Vatra. The panel item remains available after quitting the application.
+Power changes use the dashboard’s regular review and authorization flow.
+Install the panel together with Vatra using the Debian installer above.
 
-Install the main Vatra Debian package first. On Debian 13 or MX Linux based
-on Debian 13, run these commands from `common/vatra`:
+In **Appearance → Battery indicator**, select **Vatra Panel** and add
+**Vatra Panel** from XFCE’s **Panel → Add New Items** once. Selecting it stops
+Vatra’s compact tray. Switching to **System tray** or **Off** hides the panel
+indicator. The XFCE panel item remains configured and reappears when selected.
+Vatra’s selection does not control other apps’ indicators. **Appearance**
+also shows the currently active indicator. A panel item reports its
+presence while visible. The accent, percentage mode, and charging bolt are
+shared between System tray and Vatra Panel. In Vatra Panel, **Beside battery**
+shows a vertical battery and a separate text label at the panel’s font size.
 
-```sh
-sudo apt install build-essential pkg-config dpkg-dev libxfce4panel-2.0-dev libgtk-3-dev
-bash packaging/build-xfce-panel-deb.sh
-sudo apt install "./dist/vatra-xfce-panel_0.1.0_$(dpkg --print-architecture).deb"
-```
-
-Open **Panel → Add New Items** in XFCE and add **Vatra Panel**. If you want
-a single Vatra indicator, choose **Disable tray** from Vatra's compact tray
-menu. Remove the plugin from the panel and run
-`sudo apt remove vatra-xfce-panel` to uninstall it.
+On another desktop, a saved XFCE panel choice falls back to the system tray.
+The main Vatra package is available without the XFCE plugin on other desktops.
+To uninstall just the plugin, remove its XFCE panel item and run
+`sudo apt remove vatra-xfce-panel`.
 
 ## Review power changes
 

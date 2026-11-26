@@ -250,6 +250,28 @@ fn variant(signature: &CStr, text: &str) -> Ptr {
     unsafe { g_variant_parse(signature.as_ptr(), text.as_ptr(), null(), null_mut(), null_mut()) }
 }
 
+pub fn xfce_panel_visible() -> Option<bool> {
+    unsafe {
+        let bus = g_bus_get_sync(2, null_mut(), null_mut());
+        if bus.is_null() { return None; }
+        g_dbus_connection_set_exit_on_close(bus, 0);
+        let args = variant(c"(s)", "('io.github.VladCraft228.VatraPanel',)");
+        let reply = g_dbus_connection_call_sync(bus, c"org.freedesktop.DBus".as_ptr(),
+            c"/org/freedesktop/DBus".as_ptr(), c"org.freedesktop.DBus".as_ptr(),
+            c"NameHasOwner".as_ptr(), args, c"(b)".as_ptr(), 0, 600, null_mut(), null_mut());
+        let visible = if reply.is_null() { None } else {
+            let value = g_variant_get_child_value(reply, 0);
+            let visible = g_variant_get_boolean(value) != 0;
+            release(value);
+            Some(visible)
+        };
+        release(reply);
+        release(args);
+        g_object_unref(bus);
+        visible
+    }
+}
+
 pub fn notify(message: &str) -> bool {
     unsafe {
         let bus = g_bus_get_sync(2, null_mut(), null_mut()); // G_BUS_TYPE_SESSION
@@ -660,6 +682,24 @@ mod tests {
         call(&name, "/MenuBar", "com.canonical.dbusmenu.Event", &["10", "clicked", "<0>", "0"]);
         assert!(matches!(rx.recv_timeout(WAIT).unwrap(), Action::Quit));
         drop(worker);
+    }
+
+    #[test]
+    fn charging_badge_does_not_cover_any_percentage_glyph() {
+        for level in 0..=100 {
+            for percent in [1, 2] {
+                let left = if percent == 2 { 9 } else { 0 };
+                let right = if percent == 2 { 24 } else { 22 };
+                let off = icon::draw(Some(level), false, [255, 177, 107], percent, 0);
+                let on = icon::draw(Some(level), true, [255, 177, 107], percent, 0);
+                assert_ne!(off, on);
+                for y in 7..17 {
+                    let row = y * 24 * 4;
+                    assert_eq!(&off[row + left * 4..row + right * 4],
+                               &on[row + left * 4..row + right * 4]);
+                }
+            }
+        }
     }
 
     #[test]

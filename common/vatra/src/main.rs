@@ -8,6 +8,7 @@ mod profiles;
 mod presets;
 
 use appearance::Appearance;
+use tray::Indicator;
 use dashboard::{Dashboard, Page, SIDEBAR_WIDTH};
 use history::History;
 use profiles::{Diagnostics, PowerSource, Profile};
@@ -69,10 +70,15 @@ struct App {
     apply_result: Option<Receiver<String>>,
     apply_message: String,
     proxy: EventLoopProxy<AppEvent>,
+    indicator: Indicator,
+    xfce_panel_available: bool,
+    xfce_panel_visible: Option<bool>,
+    xfce_panel_probe_pending: bool,
     tray: Option<tray::Tray>,
     tray_generation: u64,
     tray_deadline: Option<Instant>,
     start_in_tray: bool,
+    startup_request: Option<instance::Request>,
 }
 
 impl App {
@@ -103,6 +109,7 @@ impl App {
         }
         self.history.record(history::now(), self.snapshot.battery.as_ref().and_then(|battery| battery.signed_power()));
         self.update_tray();
+        self.probe_xfce_panel();
         self.next_sample = Instant::now() + SAMPLE_INTERVAL;
     }
 
@@ -124,6 +131,7 @@ impl App {
     }
 
     fn render(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let indicator_status = self.indicator_status();
         let (Some(window), Some(surface)) = (&self.window, &mut self.surface) else { return Ok(()) };
         let size = window.inner_size();
         let (Some(width), Some(height)) = (NonZeroU32::new(size.width), NonZeroU32::new(size.height)) else {
@@ -145,7 +153,9 @@ impl App {
             canvas, window.scale_factor() as f32, &self.snapshot, &self.history,
             self.profile.zip(self.diagnostics.as_ref()),
             active_mode,
-            self.tray.is_some(),
+            self.indicator,
+            self.xfce_panel_available,
+            indicator_status,
             self.advanced,
             self.preview_source,
             &self.presets,
@@ -230,9 +240,8 @@ impl App {
             self.apply_message.clone_from(&message);
             let proxy = self.proxy.clone();
             std::thread::spawn(move || {
-                if !tray::notify(&message) {
-                    let _ = proxy.send_event(AppEvent::NoticeFallback(message));
-                }
+                let delivered = tray::notify(&message);
+                let _ = proxy.send_event(AppEvent::ModeNotice { message, delivered });
             });
         } else {
             if let Some(event_loop) = from_tray {
@@ -324,8 +333,19 @@ impl App {
         if let Some(window) = &self.window { window.request_redraw(); }
     }
 
+    fn advanced_automatic_is_current(&self) -> bool {
+        self.profile.is_some_and(|index| Profile::ALL[index] == Profile::Automatic)
+            && self.diagnostics.as_ref().is_some_and(|diagnostics| {
+                diagnostics.automatic_is_current(&self.snapshot, &self.presets, self.cpu_ranges.as_ref().ok())
+            })
+    }
+
     fn review_advanced(&mut self) {
-        if !self.advanced || self.apply_result.is_some() || tlp_helper().is_none() { return; }
+        if !self.advanced || self.apply_result.is_some() || tlp_helper().is_none()
+            || self.advanced_automatic_is_current()
+        {
+            return;
+        }
         let Some((index, diagnostics)) = self.profile.zip(self.diagnostics.as_ref()) else { return };
         let profile = Profile::ALL[index];
         if !profile.editable() {
@@ -385,6 +405,9 @@ impl App {
             Page::Diagnostics | Page::Appearance | Page::About => {
                 self.select(None);
                 self.auxiliary = Some(page);
+                if page == Page::Appearance {
+                    self.probe_xfce_panel();
+                }
                 if page == Page::Diagnostics {
                     self.diagnostics = Some(self.read_diagnostics());
                 }
@@ -399,6 +422,10 @@ impl App {
             dashboard::AppearanceEdit::Accent(color) => next = next.with_accent(color),
             dashboard::AppearanceEdit::Percent(position) => next.percent = position,
             dashboard::AppearanceEdit::Bolt(style) => next.bolt = style,
+            dashboard::AppearanceEdit::Indicator(indicator) => {
+                self.select_indicator(indicator);
+                return;
+            }
         }
         self.apply_message = match next.save() {
             Ok(()) => {
@@ -436,12 +463,88 @@ impl App {
         }
     }
 
-    fn enable_tray(&mut self) {
-        self.apply_message = match self.start_tray().and_then(|_| tray::set_enabled(true)) {
-            Ok(()) => String::new(),
-            Err(error) => format!("Could not enable Vatra tray: {error}"),
+    fn handle_request(&mut self, event_loop: &ActiveEventLoop, request: instance::Request) {
+        match request {
+            instance::Request::Activate => self.show_window(event_loop),
+            instance::Request::EnableTray => {
+                self.select_indicator(Indicator::Tray);
+                self.show_window(event_loop);
+            }
+            instance::Request::Background => {}
+            instance::Request::Quit => event_loop.exit(),
+            instance::Request::IndicatorSettings => {
+                self.open_page(Page::Appearance);
+                self.show_window(event_loop);
+            }
+            mode => {
+                if let Some(profile) = mode.mode() {
+                    self.choose_quick_mode(profile, Some(event_loop));
+                }
+            }
+        }
+    }
+
+    fn indicator_status(&self) -> &'static str {
+        match self.indicator {
+            Indicator::Off => "Active: Off",
+            Indicator::Tray => self.tray.as_ref().and_then(tray::Tray::active_status)
+                .unwrap_or("Inactive: waiting for a system tray host"),
+            Indicator::XfcePanel => match self.xfce_panel_visible {
+                Some(true) => "Active: Vatra Panel (XFCE)",
+                Some(false) => "Inactive: Vatra Panel is not reporting visibility",
+                None if self.xfce_panel_probe_pending => "Checking Vatra Panel...",
+                None => "Vatra Panel status unavailable",
+            },
+        }
+    }
+
+    fn probe_xfce_panel(&mut self) {
+        if self.indicator != Indicator::XfcePanel || self.auxiliary != Some(Page::Appearance)
+            || self.xfce_panel_probe_pending
+        {
+            return;
+        }
+        self.xfce_panel_probe_pending = true;
+        let proxy = self.proxy.clone();
+        std::thread::spawn(move || {
+            let _ = proxy.send_event(AppEvent::XfcePanelVisibility(tray::xfce_panel_visible()));
+        });
+    }
+
+    fn select_indicator(&mut self, next: Indicator) {
+        let previous = self.indicator;
+        let result = if next == Indicator::XfcePanel && !self.xfce_panel_available {
+            Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "Vatra Panel requires the XFCE plugin"))
+        } else {
+            self.change_indicator(next)
         };
+        self.apply_message = match result {
+            Ok(()) => String::new(),
+            Err(error) => format!("Could not change indicator: {error}"),
+        };
+        if self.indicator == previous && previous == Indicator::Tray && self.tray.is_none() {
+            let _ = self.start_tray();
+        }
+        if next != previous {
+            self.xfce_panel_visible = None;
+        }
+        self.probe_xfce_panel();
         if let Some(window) = &self.window { window.request_redraw(); }
+    }
+
+    fn change_indicator(&mut self, next: Indicator) -> std::io::Result<()> {
+        if next != Indicator::Tray {
+            self.remove_tray();
+        }
+        next.save()?;
+        if next == Indicator::Tray {
+            if let Err(error) = self.start_tray() {
+                self.indicator.save()?;
+                return Err(error);
+            }
+        }
+        self.indicator = next;
+        Ok(())
     }
 
     fn start_tray(&mut self) -> std::io::Result<()> {
@@ -516,23 +619,28 @@ const TRAY_UNAVAILABLE: &str = "Tray unavailable. Waiting for a StatusNotifierIt
 enum AppEvent {
     Instance(instance::Request),
     Tray(u64, tray::Action),
-    NoticeFallback(String),
+    ModeNotice { message: String, delivered: bool },
+    XfcePanelVisibility(Option<bool>),
 }
 
 impl ApplicationHandler<AppEvent> for App {
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: AppEvent) {
         match event {
-            AppEvent::Instance(instance::Request::Activate) => self.show_window(event_loop),
-            AppEvent::Instance(instance::Request::EnableTray) => {
-                self.enable_tray();
-                self.show_window(event_loop);
+            AppEvent::Instance(request) => self.handle_request(event_loop, request),
+            AppEvent::XfcePanelVisibility(visible) => {
+                self.xfce_panel_probe_pending = false;
+                self.xfce_panel_visible = visible;
+                if let Some(window) = &self.window { window.request_redraw(); }
             }
-            AppEvent::Instance(instance::Request::Background) => {}
-            AppEvent::NoticeFallback(message) => {
+            AppEvent::ModeNotice { message, delivered } => {
                 if self.window.is_none() && self.apply_message == message {
-                    self.open_page(Page::Modes);
-                    self.apply_message = message;
-                    self.show_window(event_loop);
+                    if delivered {
+                        if self.tray.is_none() { event_loop.exit(); }
+                    } else {
+                        self.open_page(Page::Modes);
+                        self.apply_message = message;
+                        self.show_window(event_loop);
+                    }
                 }
             }
             AppEvent::Tray(generation, action) if generation == self.tray_generation => {
@@ -567,12 +675,8 @@ impl ApplicationHandler<AppEvent> for App {
                         }
                     }
                     tray::Action::Disable => {
-                        if let Err(error) = tray::set_enabled(false) {
-                            self.apply_message = format!("Could not disable tray: {error}");
-                        } else {
-                            self.remove_tray();
-                            self.show_window(event_loop);
-                        }
+                        self.select_indicator(Indicator::Off);
+                        self.show_window(event_loop);
                     }
                     tray::Action::Quit => event_loop.exit(),
                     tray::Action::Watcher(_) | tray::Action::SniReady(_) | tray::Action::Fallback(..) | tray::Action::Exited => {}
@@ -584,7 +688,9 @@ impl ApplicationHandler<AppEvent> for App {
     }
 
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if self.window.is_none() && !self.start_in_tray {
+        if let Some(request) = self.startup_request.take() {
+            self.handle_request(event_loop, request);
+        } else if self.window.is_none() && !self.start_in_tray {
             self.show_window(event_loop);
         }
     }
@@ -671,7 +777,7 @@ impl ApplicationHandler<AppEvent> for App {
                     }
                     let pointing = dashboard::sidebar_hit(x, y).is_some() || match self.auxiliary {
                         Some(Page::About) => dashboard::github_hit(panel_x, y),
-                        Some(Page::Appearance) => dashboard::appearance_hit(panel_x, y).is_some(),
+                        Some(Page::Appearance) => dashboard::appearance_hit(panel_x, y, self.xfce_panel_available, self.indicator).is_some(),
                         Some(_) => false,
                         None if self.review.is_some() => dashboard::overlay_hit(panel_x, y).is_some(),
                         None if self.advanced => dashboard::click_target(width, panel_x, y, true).is_some()
@@ -679,11 +785,11 @@ impl ApplicationHandler<AppEvent> for App {
                             || dashboard::hits_refresh(width, panel_x, y)
                             || dashboard::epp_edit_hit(panel_x, y).is_some()
                             || dashboard::cap_edit_hit(panel_x, y).is_some()
-                            || dashboard::hits_apply(panel_x, y),
+                            || (dashboard::hits_apply(panel_x, y) && !self.advanced_automatic_is_current()),
                         None if self.profile.is_some() => self.apply_result.is_none()
                             && dashboard::quick_mode_hit(width, panel_x, y).is_some(),
                         None => dashboard::navigation_hit(width, panel_x, y, false)
-                            || (self.tray.is_none() && dashboard::tray_hit(width, panel_x, y))
+                            || (self.indicator == Indicator::Off && dashboard::tray_hit(width, panel_x, y))
                             || self.dragging_range || dashboard::slider_hit(width, panel_x, y),
                     };
                     window.set_cursor(if pointing { CursorIcon::Pointer } else { CursorIcon::Default });
@@ -719,7 +825,7 @@ impl ApplicationHandler<AppEvent> for App {
                             }
                         }
                         Some(Page::Appearance) => {
-                            if let Some(edit) = dashboard::appearance_hit(x, y) { self.edit_appearance(edit); }
+                            if let Some(edit) = dashboard::appearance_hit(x, y, self.xfce_panel_available, self.indicator) { self.edit_appearance(edit); }
                         }
                         Some(_) => {}
                         None if self.review.is_some() => {
@@ -746,8 +852,8 @@ impl ApplicationHandler<AppEvent> for App {
                             }
                         }
                         None => {
-                            if self.tray.is_none() && dashboard::tray_hit(width, x, y) {
-                                self.enable_tray();
+                            if self.indicator == Indicator::Off && dashboard::tray_hit(width, x, y) {
+                                self.open_page(Page::Appearance);
                             } else if dashboard::slider_hit(width, x, y) {
                                 self.dragging_range = true;
                                 self.range_minutes = dashboard::slider_minutes(width, x);
@@ -825,11 +931,26 @@ impl ApplicationHandler<AppEvent> for App {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let request = match std::env::args().nth(1).as_deref() {
+    let mut arguments = std::env::args().skip(1);
+    let request = match arguments.next().as_deref() {
+        Some("--version") => {
+            println!("Vatra {}", env!("CARGO_PKG_VERSION"));
+            return Ok(());
+        }
+        Some("--indicator-settings") => instance::Request::IndicatorSettings,
+        Some("--quit") => instance::Request::Quit,
+        Some("--power-mode") => arguments.next().as_deref()
+            .and_then(instance::Request::from_mode_id)
+            .ok_or("Expected automatic, balanced, performance or power-saver after --power-mode.")?,
         Some("--enable-tray") => instance::Request::EnableTray,
         Some("--background") => instance::Request::Background,
         _ => instance::Request::Activate,
     };
+    let xfce_panel_available = tray::xfce_panel_available();
+    let indicator = Indicator::load(xfce_panel_available);
+    if matches!(request, instance::Request::Background) && indicator != Indicator::Tray {
+        return Ok(());
+    }
     let Some(mut instance) = instance::Instance::acquire(request)? else { return Ok(()) };
     let event_loop = EventLoop::<AppEvent>::with_user_event().build()?;
     let proxy = event_loop.create_proxy();
@@ -862,19 +983,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         apply_result: None,
         apply_message: String::new(),
         proxy,
+        indicator,
+        xfce_panel_available,
+        xfce_panel_visible: None,
+        xfce_panel_probe_pending: false,
         tray: None,
         tray_generation: 0,
         tray_deadline: None,
         start_in_tray: false,
+        startup_request: (request.mode().is_some() || matches!(request, instance::Request::IndicatorSettings))
+            .then_some(request),
     };
-    if tray::enabled() || matches!(request, instance::Request::EnableTray) {
+    if matches!(request, instance::Request::EnableTray) {
+        app.select_indicator(Indicator::Tray);
+    } else if app.indicator == Indicator::Tray {
         match app.start_tray() {
-            Ok(()) => {
-                app.start_in_tray = matches!(request, instance::Request::Background);
-                if matches!(request, instance::Request::EnableTray) {
-                    if let Err(error) = tray::set_enabled(true) { eprintln!("Could not save tray preference: {error}"); }
-                }
-            }
+            Ok(()) => app.start_in_tray = matches!(request, instance::Request::Background),
             Err(error) => eprintln!("Vatra tray unavailable: {error}"),
         }
     }

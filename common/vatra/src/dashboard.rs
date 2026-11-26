@@ -3,6 +3,7 @@ use crate::history::{self, History, DISCHARGE_WINDOWS, WINDOW_SECONDS};
 use crate::presets::{self, CpuRange, Presets, EPP_OPTIONS};
 use crate::profiles::{Diagnostics, PowerSource, Profile};
 use crate::telemetry::Snapshot;
+use crate::tray::Indicator;
 use fontdue::{Font, FontSettings, Metrics};
 use std::collections::HashMap;
 use std::process::Command;
@@ -48,26 +49,44 @@ fn accent_x(index: usize) -> f32 { 44.0 + index as f32 * 128.0 }
 const WHEEL_SIZE: u32 = 174;
 const WHEEL_LEFT: f32 = 44.0;
 const WHEEL_TOP: f32 = 210.0;
-const STYLE_OPTION_WIDTH: f32 = 112.0;
+const STYLE_OPTION_WIDTH: f32 = 132.0;
 const STYLE_X: f32 = 250.0;
 const PERCENT_TOP: f32 = 259.0;
 const BOLT_TOP: f32 = 343.0;
+const INDICATOR_TOP: f32 = 507.0;
+const INDICATOR_X: f32 = 44.0;
+const INDICATOR_WIDTH: f32 = 128.0;
 
-fn style_x(index: usize) -> f32 { STYLE_X + index as f32 * 120.0 }
+fn indicator_x(index: usize) -> f32 {
+    INDICATOR_X + index as f32 * (INDICATOR_WIDTH + 8.0)
+}
+
+fn style_x(index: usize) -> f32 { STYLE_X + index as f32 * (STYLE_OPTION_WIDTH + 8.0) }
 
 pub enum AppearanceEdit {
     Accent([u8; 3]),
     Percent(usize),
     Bolt(usize),
+    Indicator(Indicator),
 }
 
-pub fn appearance_hit(x: f64, y: f64) -> Option<AppearanceEdit> {
+pub fn appearance_hit(
+    x: f64, y: f64, xfce_panel_available: bool, selected: Indicator,
+) -> Option<AppearanceEdit> {
+    for (index, indicator) in Indicator::ALL.into_iter().enumerate() {
+        if (indicator != Indicator::XfcePanel || xfce_panel_available)
+            && hit(x, y, indicator_x(index), INDICATOR_TOP, INDICATOR_WIDTH)
+        {
+            return Some(AppearanceEdit::Indicator(indicator));
+        }
+    }
     if let Some(index) = accent_hit(x, y) {
         return Some(AppearanceEdit::Accent(ACCENTS[index].0));
     }
     if let Some(color) = wheel_color(x as f32 - WHEEL_LEFT, y as f32 - WHEEL_TOP) {
         return Some(AppearanceEdit::Accent(color));
     }
+    if selected == Indicator::Off { return None; }
     for index in 0..PERCENT_OPTIONS.len() {
         if hit(x, y, style_x(index), PERCENT_TOP, STYLE_OPTION_WIDTH) {
             return Some(AppearanceEdit::Percent(index));
@@ -195,7 +214,9 @@ impl Dashboard {
         history: &History,
         profiles: Option<(usize, &Diagnostics)>,
         active_mode: Option<Profile>,
-        tray_requested: bool,
+        indicator: Indicator,
+        xfce_panel_available: bool,
+        indicator_status: &str,
         advanced: bool,
         preview_source: Option<PowerSource>,
         presets: &Presets,
@@ -251,15 +272,37 @@ impl Dashboard {
                 8.0, 8.0, 4.0, rgb(accent));
             frame.rounded(44.0, 400.0, 25.0, 19.0, 5.0, rgb(accent));
             frame.text(78.0, 415.0, 14, &format!("#{}", appearance.hex().to_uppercase()), TEXT);
-            frame.text(STYLE_X, 242.0, 16, "Tray percentage", TEXT);
-            for (index, label) in PERCENT_OPTIONS.into_iter().enumerate() {
-                frame.button(style_x(index), PERCENT_TOP, STYLE_OPTION_WIDTH, label, index == appearance.percent);
+            if indicator != Indicator::Off {
+                frame.text(STYLE_X, 242.0, 16, "Battery percentage", TEXT);
+                for (index, label) in PERCENT_OPTIONS.into_iter().enumerate() {
+                    frame.button(style_x(index), PERCENT_TOP, STYLE_OPTION_WIDTH, label, index == appearance.percent);
+                }
+                frame.text(STYLE_X, 326.0, 16, "Charging bolt", TEXT);
+                for (index, label) in BOLT_OPTIONS.into_iter().enumerate() {
+                    frame.button(style_x(index), BOLT_TOP, STYLE_OPTION_WIDTH, label, index == appearance.bolt);
+                }
             }
-            frame.text(STYLE_X, 326.0, 16, "Charging bolt", TEXT);
-            for (index, label) in BOLT_OPTIONS.into_iter().enumerate() {
-                frame.button(style_x(index), BOLT_TOP, STYLE_OPTION_WIDTH, label, index == appearance.bolt);
+            frame.rounded(24.0, 466.0, width - 48.0, 151.0, 16.0, panel);
+            frame.text(44.0, 493.0, 18, "Battery indicator", TEXT);
+            for (index, option) in Indicator::ALL.into_iter().enumerate() {
+                let x = indicator_x(index);
+                if option == Indicator::XfcePanel && !xfce_panel_available {
+                    frame.text(x + 12.0, INDICATOR_TOP + 22.0, 14, "Vatra Panel", MUTED);
+                } else {
+                    frame.button(x, INDICATOR_TOP, INDICATOR_WIDTH, option.label(), option == indicator);
+                }
             }
-            if !apply_message.is_empty() { frame.text(STYLE_X, 415.0, 13, apply_message, MUTED); }
+            frame.text_clipped(44.0, 566.0, 16, indicator_status, TEXT, width - 88.0);
+            let details = if !apply_message.is_empty() {
+                apply_message
+            } else if indicator == Indicator::XfcePanel {
+                "Manage Vatra Panel in XFCE Panel Preferences."
+            } else if xfce_panel_available {
+                "Vatra Panel shows the battery percentage as full-size text."
+            } else {
+                "Vatra Panel is available with the optional XFCE plugin."
+            };
+            frame.text_clipped(44.0, 594.0, 14, details, MUTED, width - 88.0);
             return;
         }
         if page == Page::Diagnostics {
@@ -311,8 +354,8 @@ impl Dashboard {
                 if review.raising { "Raise and apply" } else { "Apply changes" }, true);
             return;
         }
-        if page == Page::Overview && !tray_requested {
-            frame.button(width - HEADER_INSET, 24.0, 132.0, "Show in tray", false);
+        if page == Page::Overview && indicator == Indicator::Off {
+            frame.button(width - HEADER_INSET, 24.0, 132.0, "Set up indicator", false);
             if !apply_message.is_empty() {
                 frame.text(185.0, 46.0, 13, apply_message, MUTED);
             }
@@ -383,6 +426,8 @@ impl Dashboard {
                 frame.button(profile_x(index), 158.0, PROFILE_WIDTH, profile.name(), selected == index);
             }
             let selected = Profile::ALL[selected];
+            let automatic_current = selected == Profile::Automatic
+                && diagnostics.automatic_is_current(snapshot, presets, cpu_ranges.ok());
             let saved_cap = source.and_then(|source| presets.cap(selected, source));
             let requested = source.and_then(|source| presets.requested_epp(selected, source, snapshot))
                 .or_else(|| saved_cap.map(|_| "keep"));
@@ -392,7 +437,7 @@ impl Dashboard {
                 frame.text(40.0, CAP_TOP + 22.0, 14, "Maximum CPU speed", TEXT);
                 frame.button(194.0, CAP_TOP, 32.0, "-", false);
                 frame.text(236.0, CAP_TOP + 22.0, 14,
-                    &if saved_cap.is_none() && selected.id() == "custom" { "Keep current".into() } else { presets::limit_label(cap) }, accent);
+                    &if saved_cap.is_none() && selected.id() == "custom" { "Keep current".into() } else { presets::limit_label(u64::from(cap)) }, accent);
                 frame.button(342.0, CAP_TOP, 32.0, "+", false);
                 let fraction = f64::from(cap.saturating_sub(range.minimum).min(range.ceiling - range.minimum))
                     / f64::from(range.ceiling - range.minimum);
@@ -422,7 +467,8 @@ impl Dashboard {
             if let Some(source) = source {
                 let active = diagnostics.source == Some(source);
                 let [current_epp, max] = if active {
-                    [snapshot.epp.clone(), snapshot.maximum.clone()]
+                    [snapshot.epp.clone(), snapshot.maximum_khz
+                        .map_or_else(|| snapshot.maximum.clone(), presets::limit_label)]
                 } else {
                     diagnostics.configured_cpu(source)
                 };
@@ -431,24 +477,27 @@ impl Dashboard {
                 let proposed_limit = if selected.id() == "custom" && saved_cap.is_none() {
                     max.clone()
                 } else {
-                    selected_cap.map_or_else(|| "Unavailable".into(), presets::limit_label)
+                    selected_cap.map_or_else(|| "Unavailable".into(), |khz| presets::limit_label(u64::from(khz)))
                 };
                 frame.rounded(40.0, 308.0, width - 80.0, 155.0, 12.0, rgb([19, 26, 37]));
                 let middle = width * 0.40;
                 let end = width * 0.67;
                 frame.text(56.0, 340.0, 17, "Preview", TEXT);
                 frame.text(middle, 340.0, 13, if active { "Current" } else { "Saved in TLP" }, MUTED);
-                frame.text(end, 340.0, 13, "After apply", accent);
+                frame.text(end, 340.0, 13, if automatic_current { "Automatic" } else { "After apply" },
+                    if automatic_current { MUTED } else { accent });
                 frame.text(56.0, 381.0, 15, "Energy preference", TEXT);
                 frame.text(middle, 381.0, 13, &current_epp, TEXT);
-                frame.text(end, 381.0, 13, after, accent);
+                frame.text(end, 381.0, 13, after, if automatic_current { TEXT } else { accent });
                 frame.text(56.0, 422.0, 15, "Maximum CPU speed", TEXT);
                 frame.text(middle, 422.0, 13, &max, TEXT);
-                frame.text(end, 422.0, 13, &proposed_limit, accent);
+                frame.text(end, 422.0, 13, &proposed_limit, if automatic_current { TEXT } else { accent });
             }
             let changes_cap = saved_cap.is_some() || selected.id() != "custom";
             let preflight = if changes_cap && cpu_ranges.is_err() {
                 cpu_ranges.err().unwrap_or_default().to_owned()
+            } else if automatic_current {
+                "Automatic is already active. No changes needed.".into()
             } else if !selected.editable() {
                 "Review Automatic to see the limits for both power sources.".into()
             } else if source != diagnostics.source {
@@ -466,7 +515,7 @@ impl Dashboard {
             let eligible = if selected.editable() {
                 (!changes_cap || range.is_some()) && diagnostics.apply_target(requested, source, snapshot, changes_cap).is_some()
             } else {
-                diagnostics.quick_target(selected, snapshot, presets).is_ok() && range.is_some()
+                !automatic_current && diagnostics.quick_target(selected, snapshot, presets).is_ok() && range.is_some()
             };
             if helper_available && eligible && !applying {
                 frame.button(40.0, APPLY_TOP, APPLY_WIDTH, "Review changes", false);

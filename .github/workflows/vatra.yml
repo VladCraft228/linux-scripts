@@ -32,7 +32,7 @@ jobs:
             build-essential ca-certificates curl git pkg-config dpkg-dev \
             libxkbcommon-dev libxkbcommon-x11-0 libwayland-dev libglib2.0-dev desktop-file-utils fontconfig fonts-dejavu-core \
             python3 python3-gi gir1.2-gtk-3.0 dbus-daemon libglib2.0-bin \
-            xvfb xauth xdotool trayer weston
+            xvfb xauth xdotool trayer weston libxfce4panel-2.0-dev libxfce4ui-2-dev libgtk-3-dev
       - uses: actions/checkout@v4
       - name: Install Rust
         working-directory: .
@@ -51,11 +51,14 @@ jobs:
           cargo build --locked --features test-support
           dbus-run-session -- xvfb-run -a bash tests/smoke.sh x11 target/debug/vatra
           dbus-run-session -- bash tests/smoke.sh wayland target/debug/vatra
-      - name: Build and inspect package
+      - name: Build and inspect Debian packages
         run: |
           bash packaging/build-deb.sh
-          dpkg-deb --info dist/*.deb
-          dpkg-deb --contents dist/*.deb
+          bash packaging/build-xfce-panel-deb.sh
+          for package in dist/*.deb; do
+            dpkg-deb --info "$package"
+            dpkg-deb --contents "$package"
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: vatra-debian-trixie

@@ -144,8 +144,9 @@ impl CpuRange {
     }
 }
 
-pub fn limit_label(khz: u32) -> String {
-    format!("{:.2} MHz", f64::from(khz) / 1000.0)
+pub fn limit_label(khz: u64) -> String {
+    let mhz = format!("{}.{:03}", khz / 1000, khz % 1000);
+    format!("{} MHz", mhz.trim_end_matches('0').trim_end_matches('.'))
 }
 
 pub fn read_ranges(helper: &str, active: PowerSource) -> Result<[CpuRange; 2], String> {
@@ -189,6 +190,13 @@ pub fn cpu_range(ranges: Option<&[CpuRange; 2]>, source: PowerSource) -> Option<
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn frequency_labels_keep_exact_kilohertz() {
+        assert_eq!(limit_label(4_373_858), "4373.858 MHz");
+        assert_eq!(limit_label(4_373_860), "4373.86 MHz");
+        assert_eq!(limit_label(4_374_000), "4374 MHz");
+    }
 
     #[test]
     fn editing_and_resetting_preserve_independent_settings() {

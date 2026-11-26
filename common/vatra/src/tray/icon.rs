@@ -31,7 +31,7 @@ pub fn draw(level: Option<u8>, charging: bool, accent: [u8; 3], percent: u8, bol
     } else {
         rect(1, 5, 20, 14, theme);
         rect(3, 7, 16, 10, bg);
-        rect(22, 9, 2, 6, theme);
+        rect(22, 9, 1, 6, theme);
         rect(4, 8, (charge * 14 + 50) / 100, 8, theme);
     }
     if let Some(text) = &label {
@@ -51,10 +51,21 @@ pub fn draw(level: Option<u8>, charging: bool, accent: [u8; 3], percent: u8, bol
     }
     if charging && bolt != 2 {
         let color = if bolt == 1 { white } else { theme };
-        let (x, y) = if beside { (0, 7) } else if label.is_some() { (16, 1) } else { (8, 7) };
-        let shape = [(4, 0, 1), (3, 1, 2), (2, 2, 2), (1, 3, 5), (3, 4, 2), (2, 5, 2), (2, 6, 1)];
-        for (dx, dy, w) in shape { rect(x + dx - 1, y + dy - 1, w + 2, 3, bg); }
-        for (dx, dy, w) in shape { rect(x + dx, y + dy, w, 1, color); }
+        let (x, y) = if beside {
+            (1, 9)
+        } else if label.is_some() {
+            // Keep the charging badge above the text. Its backing ends
+            // before the first row of the percentage glyphs.
+            (17, 0)
+        } else {
+            (8, 9)
+        };
+        rect(x, y, 6, 7, bg);
+        let shape = [(3, 0, 2), (2, 1, 2), (1, 2, 3), (1, 3, 4),
+                     (2, 4, 2), (1, 5, 2), (1, 6, 1)];
+        for (dx, dy, width) in shape {
+            rect(x + dx, y + dy, width, 1, color);
+        }
     }
     pixels
 }

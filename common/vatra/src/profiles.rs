@@ -339,6 +339,34 @@ impl Diagnostics {
         selection.or(self.source)
     }
 
+    pub fn automatic_is_current(
+        &self,
+        snapshot: &crate::telemetry::Snapshot,
+        presets: &crate::presets::Presets,
+        ranges: Option<&[crate::presets::CpuRange; 2]>,
+    ) -> bool {
+        let mode = Profile::Automatic;
+        if self.active_mode(snapshot, presets) != Some(mode) {
+            return false;
+        }
+        let (Some(active), Some(config)) = (self.source, self.config.as_deref()) else { return false };
+        if configured_value(config, "TLP_PERSISTENT_DEFAULT").is_some_and(|(value, _)| value == "1") {
+            return false;
+        }
+        PowerSource::ALL.into_iter().all(|source| {
+            let Some(range) = crate::presets::cpu_range(ranges, source) else { return false };
+            let Some(expected_epp) = presets.requested_epp(mode, source, snapshot) else { return false };
+            let expected_max = u64::from(range.default_cap(mode));
+            let label = source.label();
+            let epp = configured_value(config, &format!("CPU_ENERGY_PERF_POLICY_ON_{label}"));
+            let maximum = configured_value(config, &format!("CPU_SCALING_MAX_FREQ_ON_{label}"))
+                .and_then(|(value, _)| value.parse::<u64>().ok());
+            epp.is_some_and(|(value, _)| value == expected_epp)
+                && maximum == Some(expected_max)
+                && (source != active || (snapshot.epp == expected_epp && snapshot.maximum_khz == Some(expected_max)))
+        })
+    }
+
     pub fn configured_cpu(&self, source: PowerSource) -> [String; 2] {
         let Some(config) = self.config.as_deref() else {
             return ["Unavailable".into(), "Unavailable".into()];
@@ -349,7 +377,7 @@ impl Diagnostics {
         let epp = configured_value(config, &epp_key).map_or("Unspecified", |(value, _)| value);
         let max = configured_value(config, &max_key)
             .and_then(|(value, _)| value.parse::<u64>().ok())
-            .map_or_else(|| "System default".into(), |khz| format!("{:.0} MHz", khz as f64 / 1000.0));
+            .map_or_else(|| "System default".into(), crate::presets::limit_label);
         [epp.into(), max]
     }
 

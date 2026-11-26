@@ -2,8 +2,8 @@
 set -euo pipefail
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
 
-if ! pkg-config --exists 'libxfce4panel-2.0 >= 4.14' gtk+-3.0 gio-2.0; then
-    echo "Install libxfce4panel-2.0-dev and libgtk-3-dev to build Vatra Panel." >&2
+if ! pkg-config --print-errors --exists 'libxfce4panel-2.0 >= 4.14' gtk+-3.0 gio-2.0 pangocairo; then
+    echo "Install libxfce4panel-2.0-dev, libxfce4ui-2-dev and libgtk-3-dev to build Vatra Panel." >&2
     exit 1
 fi
 
@@ -19,8 +19,8 @@ if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
 fi
 
 mkdir -p -- "$(dirname -- "$module")" "$stage/debian" "$archive/DEBIAN"
-read -r -a cflags <<< "$(pkg-config --cflags libxfce4panel-2.0 gtk+-3.0 gio-2.0)"
-read -r -a libs <<< "$(pkg-config --libs libxfce4panel-2.0 gtk+-3.0 gio-2.0)"
+read -r -a cflags <<< "$(pkg-config --cflags libxfce4panel-2.0 gtk+-3.0 gio-2.0 pangocairo)"
+read -r -a libs <<< "$(pkg-config --libs libxfce4panel-2.0 gtk+-3.0 gio-2.0 pangocairo)"
 "${CC:-cc}" -std=gnu11 -Wall -Wextra -O2 -fPIC -shared -Wl,-z,defs \
     "${cflags[@]}" packaging/xfce/vatra-panel.c -o "$module" "${libs[@]}"
 install -D -m 0644 packaging/xfce/vatra-panel.desktop \
@@ -50,7 +50,7 @@ Section: xfce
 Priority: optional
 Architecture: $arch
 Maintainer: Linux Scripts <VladCraft228@users.noreply.github.com>
-Depends: ${detected#shlibs:Depends=}, vatra, xfce4-panel (>= 4.14), upower
+Depends: ${detected#shlibs:Depends=}, vatra (>= $version), xfce4-panel (>= 4.14), upower
 Homepage: https://github.com/VladCraft228/linux-scripts
 Description: Battery indicator for the Xfce panel
  Shows battery charge as a themed icon and a full-size text label.
