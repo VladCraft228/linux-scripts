@@ -30,7 +30,7 @@ jobs:
           apt-get update
           apt-get install -y --no-install-recommends \
             build-essential ca-certificates curl git pkg-config dpkg-dev \
-            libxkbcommon-dev libwayland-dev libglib2.0-dev desktop-file-utils fontconfig fonts-dejavu-core \
+            libxkbcommon-dev libxkbcommon-x11-0 libwayland-dev libglib2.0-dev desktop-file-utils fontconfig fonts-dejavu-core \
             python3 python3-gi gir1.2-gtk-3.0 dbus-daemon libglib2.0-bin \
             xvfb xauth xdotool trayer weston
       - uses: actions/checkout@v4
