@@ -9,11 +9,8 @@
 .preview-sidebar { padding: 14px 8px; background: #151b24; }
 .preview-brand { display: block; margin: 0 4px 15px; font-size: 1.25rem; }
 .preview-nav { display: grid; gap: 5px; margin: 0; padding: 0; list-style: none; }
-.preview-nav li, .preview-control { padding: 5px 8px; border-radius: 6px; background: #233648; }
-.preview-nav .preview-selected { color: #ffb16b; background: #402d1b; }
+.preview-control { padding: 5px 8px; border-radius: 6px; background: #233648; }
 .preview-content { display: grid; gap: 9px; padding: 13px; min-width: 0; }
-.preview-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.preview-heading > span:first-child { font-size: 1.35rem; }
 .preview-readings { display: grid; grid-template-columns: 1.12fr 1fr; gap: 9px; }
 .preview-card { min-width: 0; padding: 11px; background: #18212c; border-radius: 9px; }
 .preview-card small { display: block; color: #a3b8cc; font-size: .75rem; }
@@ -55,10 +52,59 @@
   .preview-sidebar { padding: 8px; }
   .preview-brand { display: none; }
   .preview-nav { grid-template-columns: repeat(3, minmax(0, 1fr)); font-size: .72rem; }
-  .preview-nav li { text-align: center; padding-inline: 3px; }
   .preview-content { padding: 8px; gap: 7px; }
   .preview-readings { gap: 7px; }
   .preview-card { padding: 8px; }
   .preview-charge { gap: 10px; }
   .preview-charge strong, .preview-watts { font-size: 1.55rem; }
+}
+
+.preview-window { --demo-accent: #ffb16b; }
+.preview-window [hidden] { display: none !important; }
+.preview-layout { align-items: stretch; min-height: 32rem; }
+.preview-content { align-content: start; }
+.preview-heading { font-size: 1.35rem; font-weight: 500; letter-spacing: normal; margin-bottom: 3px; }
+.preview-window button, .preview-window select, .preview-window input { font: inherit; }
+.preview-window button, .preview-window select { color: inherit; }
+.preview-window button, .preview-window input[type="color"], .preview-window input[type="range"] { cursor: pointer; }
+.preview-nav button, .preview-window .preview-control, .demo-options select {
+  border: 1px solid transparent;
+  background: #233648;
+  padding: 5px 8px;
+  border-radius: 6px;
+}
+.preview-nav button { text-align: left; }
+.preview-window button:hover, .preview-window .demo-project:hover { border-color: var(--demo-accent); }
+.preview-nav button[aria-selected="true"], .preview-window button[aria-pressed="true"] {
+  color: var(--demo-accent);
+  border-color: var(--demo-accent);
+  background: #2b2826;
+}
+.preview-mode strong, .preview-stat-grid strong, .demo-values td:last-child, .demo-slider output {
+  color: var(--demo-accent);
+}
+.preview-line { stroke: var(--demo-accent); }
+.preview-range > span { background: var(--demo-accent); }
+.demo-mode-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+.demo-mode-grid button { border: 1px solid #304456; text-align: left; }
+.demo-mode-grid strong, .preview-card h4 { font-size: 1rem; font-weight: 500; margin: 0 0 4px; }
+.preview-note { color: #a3b8cc; margin: 0 0 4px; }
+.demo-review { border: 1px solid #304456; }
+.demo-form .demo-review { margin-top: 8px; padding: 8px; border-radius: 6px; }
+.demo-review p { margin-bottom: 7px; }
+.demo-options { display: flex; flex-wrap: wrap; gap: 7px; margin: 9px 0; }
+.demo-options label { display: grid; gap: 4px; color: #a3b8cc; }
+.demo-slider { display: block; margin: 9px 0; }
+.demo-slider output { margin-left: 6px; }
+.demo-slider input { display: block; width: min(100%, 20rem); accent-color: var(--demo-accent); }
+.demo-values { width: 100%; border-collapse: collapse; margin: 9px 0; background: #141c26; }
+.demo-values th, .demo-values td { text-align: left; padding: 6px; font-weight: normal; overflow-wrap: anywhere; }
+.demo-values td { width: 30%; }
+.demo-tray { display: flex; align-items: center; gap: 7px; margin-top: 12px; }
+.demo-tray-icon { border: 1px solid #a3b8cc; color: var(--demo-accent); border-radius: 4px; padding: 1px 4px; min-width: 31px; min-height: 18px; text-align: center; }
+.demo-project { display: inline-block; text-decoration: none; margin-top: 8px; }
+@media (max-width: 560px) {
+  .preview-nav button { text-align: center; padding-inline: 3px; min-height: 36px; }
+  .preview-layout { min-height: 0; }
+  .demo-values th, .demo-values td { padding: 4px; }
 }

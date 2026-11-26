@@ -7,7 +7,7 @@
   <title>Vatra — Linux Scripts</title>
   <link rel="icon" href="assets/vatra.svg" type="image/svg+xml">
   <link rel="stylesheet" href="../prychal-dock/style.css">
-  <link rel="stylesheet" href="style.css?v=dark-frame">
+  <link rel="stylesheet" href="style.css?v=interactive-demo">
 </head>
 <body>
   <header class="wrap mast">
@@ -33,25 +33,25 @@
         </div>
       </div>
       <figure class="demo vatra-shot">
-        <div class="preview-window" role="img" aria-label="Vatra Overview preview. The Power Saver example shows 9% battery with 37 minutes estimated remaining, a draw of 6.6 watts, a 2789 MHz CPU limit, a 10-minute line graph, and discharge statistics.">
-          <div class="demo-top" aria-hidden="true">
-            <span class="traffic"><i></i><i></i><i></i></span>
-            <span>Vatra Overview</span>
+        <div class="preview-window">
+          <div class="demo-top">
+            <span class="traffic" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span>Vatra demo</span>
           </div>
-          <div class="preview-layout" aria-hidden="true">
+          <div class="preview-layout">
             <div class="preview-sidebar">
-              <span class="preview-brand">Vatra</span>
-              <ul class="preview-nav">
-                <li class="preview-selected">Overview</li>
-                <li>Power modes</li>
-                <li>Advanced</li>
-                <li>Diagnostics</li>
-                <li>Appearance</li>
-                <li>About</li>
-              </ul>
+              <span class="preview-brand" aria-hidden="true">Vatra</span>
+              <div class="preview-nav" role="tablist" aria-label="Vatra demo sections">
+                <button type="button" role="tab" id="tab-overview" aria-controls="demo-overview" aria-selected="true" tabindex="0">Overview</button>
+                <button type="button" role="tab" id="tab-modes" aria-controls="demo-modes" aria-selected="false" tabindex="-1">Power modes</button>
+                <button type="button" role="tab" id="tab-advanced" aria-controls="demo-advanced" aria-selected="false" tabindex="-1">Advanced</button>
+                <button type="button" role="tab" id="tab-diagnostics" aria-controls="demo-diagnostics" aria-selected="false" tabindex="-1">Diagnostics</button>
+                <button type="button" role="tab" id="tab-appearance" aria-controls="demo-appearance" aria-selected="false" tabindex="-1">Appearance</button>
+                <button type="button" role="tab" id="tab-about" aria-controls="demo-about" aria-selected="false" tabindex="-1">About</button>
+              </div>
             </div>
-            <div class="preview-content">
-              <div class="preview-heading"><span>Overview</span><span class="preview-control">Show in tray</span></div>
+            <section class="preview-content" id="demo-overview" role="tabpanel" aria-labelledby="tab-overview" tabindex="0">
+              <h3 class="preview-heading">Overview</h3>
               <div class="preview-readings">
                 <div class="preview-card">
                   <span class="preview-label">Battery</span>
@@ -67,12 +67,12 @@
                   <strong class="preview-watts">6.6 W</strong>
                   <small>Power drawn from battery</small>
                   <small>Calculated from voltage × current</small>
-                  <small class="preview-limit">CPU frequency limit: 2789 MHz</small>
+                  <small class="preview-limit">CPU frequency limit: <span data-live-cap>2789</span> MHz</small>
                 </div>
               </div>
               <div class="preview-card preview-mode">
-                <div><small>Power mode</small><strong>Power Saver</strong></div>
-                <span class="preview-control">Change mode</span>
+                <div><small>Power mode</small><strong data-live-mode>Power Saver</strong></div>
+                <button type="button" class="preview-control" data-open="modes">Change mode</button>
               </div>
               <div class="preview-card preview-history">
                 <div class="preview-history-head">
@@ -96,10 +96,93 @@
                   <div><small>10 min · 299 samples</small><strong>Avg 8.0</strong><span>Min 5.9 · Max 10.3</span></div>
                 </div>
               </div>
-            </div>
+            </section>
+            <section class="preview-content" id="demo-modes" role="tabpanel" aria-labelledby="tab-modes" tabindex="0" hidden>
+              <h3 class="preview-heading">Power modes</h3>
+              <p class="preview-note">Choose a mode to review its CPU limit and energy preference.</p>
+              <div class="demo-mode-grid">
+                <button type="button" class="preview-card" data-mode="automatic"><strong>Automatic</strong><small>Dynamic CPU range · follows AC/BAT</small></button>
+                <button type="button" class="preview-card" data-mode="balanced"><strong>Balanced</strong><small>Uses your saved AC and battery settings</small></button>
+                <button type="button" class="preview-card" data-mode="performance"><strong>Performance</strong><small>Performance EPP · full speed range</small></button>
+                <button type="button" class="preview-card" data-mode="saver" aria-pressed="true"><strong>Power Saver</strong><small>Power EPP · 60% of speed range</small></button>
+              </div>
+              <div class="preview-card"><span>On battery</span><small data-live-mode>Power Saver</small></div>
+              <div class="preview-card demo-review" data-mode-review hidden>
+                <strong data-review-title></strong>
+                <p data-review-values></p>
+                <button type="button" class="preview-control" data-apply-mode>Apply in demo</button>
+                <button type="button" class="preview-control" data-cancel-mode>Cancel</button>
+              </div>
+            </section>
+            <section class="preview-content" id="demo-advanced" role="tabpanel" aria-labelledby="tab-advanced" tabindex="0" hidden>
+              <h3 class="preview-heading">Advanced</h3>
+              <div class="preview-card demo-form">
+                <h4>CPU preferences</h4>
+                <p class="preview-note">Choose a power source and a mode to preview.</p>
+                <div class="demo-options">
+                  <label>Power source <select data-source><option value="ac">AC</option><option value="bat" selected>BAT active</option></select></label>
+                  <label>Mode <select data-preset><option value="automatic">Automatic</option><option value="performance">Performance</option><option value="balanced">Balanced</option><option value="saver" selected>Power Saver</option><option value="custom">Custom</option></select></label>
+                  <label>Energy preference <select data-epp><option value="performance">Performance</option><option value="balance_performance">Balance performance</option><option value="balance_power">Balance power</option><option value="power" selected>Power</option></select></label>
+                </div>
+                <label class="demo-slider">Maximum CPU speed <output data-cap-label for="demo-speed">2789 MHz</output>
+                  <input type="range" id="demo-speed" min="450" max="4374" step="1" value="2789">
+                </label>
+                <table class="demo-values">
+                  <thead><tr><th scope="col">Preview</th><th scope="col">Current</th><th scope="col">After apply</th></tr></thead>
+                  <tbody>
+                    <tr><th scope="row">Energy preference</th><td data-current-epp>power</td><td data-next-epp>power</td></tr>
+                    <tr><th scope="row">Maximum CPU speed</th><td data-current-cap>2789 MHz</td><td data-next-cap>2789 MHz</td></tr>
+                  </tbody>
+                </table>
+                <button type="button" class="preview-control" data-review-advanced>Review changes</button>
+                <div class="demo-review" data-advanced-review hidden>
+                  <p data-advanced-summary></p>
+                  <button type="button" class="preview-control" data-apply-advanced>Apply in demo</button>
+                  <button type="button" class="preview-control" data-cancel-advanced>Cancel</button>
+                </div>
+              </div>
+            </section>
+            <section class="preview-content" id="demo-diagnostics" role="tabpanel" aria-labelledby="tab-diagnostics" tabindex="0" hidden>
+              <h3 class="preview-heading">Diagnostics</h3>
+              <div class="preview-card"><h4>Processor</h4><small>amd-pstate-epp · 16 policies</small><small>Governor: powersave · EPP: <span data-live-epp>power</span></small><small>CPU limits: 412 MHz – <span data-live-cap>2789</span> MHz</small><small>Platform profile: Unavailable</small></div>
+              <div class="preview-card"><h4>TLP configuration</h4><small>TLP 1.8.0 / enabled / BAT</small><small>No active competing systemd units detected</small><small>AC: <span data-config-ac>power · Max 2789 MHz</span></small><small>BAT: <span data-config-bat>power · Max 2789 MHz</span></small></div>
+              <div class="preview-card"><h4>Battery · BAT1</h4><small>12.61 V · 0.53 A · 0 cycles</small><small>Capacity: 4.5 / 4.7 Ah · Temperature: —</small><small>Charge thresholds: — start / — stop</small></div>
+            </section>
+            <section class="preview-content" id="demo-appearance" role="tabpanel" aria-labelledby="tab-appearance" tabindex="0" hidden>
+              <h3 class="preview-heading">Appearance</h3>
+              <div class="preview-card demo-form">
+                <h4>Accent color</h4>
+                <div class="demo-options demo-colors" role="group" aria-label="Accent color presets">
+                  <button type="button" class="preview-control" data-color="#ffb16b" aria-pressed="true">Ember</button>
+                  <button type="button" class="preview-control" data-color="#80c1ff" aria-pressed="false">Blue</button>
+                  <button type="button" class="preview-control" data-color="#73e0bf" aria-pressed="false">Mint</button>
+                  <button type="button" class="preview-control" data-color="#cca6ff" aria-pressed="false">Violet</button>
+                </div>
+                <div class="demo-options">
+                  <label>Custom color <input type="color" value="#ffb16b" data-custom-color></label>
+                  <label>Tray percentage <select data-tray-percentage><option value="tooltip">Tooltip only</option><option value="inside" selected>Inside battery</option><option value="beside">Beside battery</option></select></label>
+                  <label>Charging bolt <select data-tray-bolt><option value="theme">Theme color</option><option value="white">White</option><option value="hidden">Hidden</option></select></label>
+                </div>
+                <div class="demo-tray" title="9% battery">
+                  <span>Tray preview</span>
+                  <span class="demo-tray-icon" data-tray-icon><span data-tray-inside>9%</span><span data-tray-symbol aria-hidden="true">ϟ</span></span>
+                  <span data-tray-beside hidden>9%</span>
+                </div>
+              </div>
+            </section>
+            <section class="preview-content" id="demo-about" role="tabpanel" aria-labelledby="tab-about" tabindex="0" hidden>
+              <h3 class="preview-heading">About</h3>
+              <div class="preview-card">
+                <h4>Vatra 0.1.0</h4>
+                <p>A battery and power dashboard for Linux</p>
+                <p>Created by VladCraft228</p>
+                <p>Linux Scripts · MIT License</p>
+                <a class="preview-control demo-project" href="https://github.com/VladCraft228/linux-scripts/tree/main/common/vatra">Open GitHub</a>
+              </div>
+            </section>
           </div>
         </div>
-        <figcaption class="demo-foot">Vatra on XFCE · Overview recreated in HTML with example readings</figcaption>
+        <figcaption class="demo-foot">Interactive demo with sample readings. Changes apply only to this preview.</figcaption>
       </figure>
     </section>
     <section class="features" aria-labelledby="feature-title">
@@ -154,5 +237,6 @@ sudo apt install "./dist/vatra-xfce-panel_0.1.0_$(dpkg --print-architecture).deb
   </main>
   <footer class="wrap foot"><span>Vatra · Linux Scripts</span><a href="https://github.com/VladCraft228/linux-scripts/issues">Report an issue</a></footer>
   <script src="copy.js" defer></script>
+  <script src="demo.js" defer></script>
 </body>
 </html>
