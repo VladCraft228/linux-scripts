@@ -4,17 +4,7 @@
 .vatra-hero h2 { max-width: 12ch; font-size: clamp(2.6rem, 4.8vw, 4.4rem); }
 .vatra-shot { margin: 0; background: #171e26; }
 .preview-window { color: #e7eef5; background: #0f141a; font-size: .8125rem; line-height: 1.45; }
-.preview-titlebar {
-  position: relative;
-  padding: 5px 38px;
-  text-align: center;
-  color: #394757;
-  background: #f5f7f9;
-}
-.preview-window-lights { position: absolute; inset: 0 10px 0 auto; display: flex; align-items: center; gap: 4px; }
-.preview-window-lights i { width: 7px; height: 7px; border-radius: 50%; background: #efb935; }
-.preview-window-lights i:nth-child(2) { background: #33ba49; }
-.preview-window-lights i:nth-child(3) { background: #de5863; }
+.vatra-shot .demo-top { background: var(--panel); border-bottom: 1px solid var(--line); }
 .preview-layout { display: grid; grid-template-columns: minmax(0, 7rem) minmax(0, 1fr); }
 .preview-sidebar { padding: 14px 8px; background: #151b24; }
 .preview-brand { display: block; margin: 0 4px 15px; font-size: 1.25rem; }
