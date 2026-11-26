@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Vatra
+Comment=Monitor battery power and CPU power profiles
+Exec=/usr/bin/vatra
+Icon=vatra
+StartupWMClass=vatra
+Terminal=false
+Categories=System;Monitor;

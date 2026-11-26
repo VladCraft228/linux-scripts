@@ -1,0 +1,11 @@
+[package]
+name = "vatra"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+fontdue = "0.9"
+softbuffer = "0.4"
+tiny-skia = "0.11"
+winit = "0.30"

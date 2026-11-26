@@ -1,0 +1,54 @@
+name: Vatra
+
+on:
+  push:
+    paths:
+      - 'common/vatra/**'
+      - '.github/workflows/vatra.yml'
+      - 'LICENSE'
+  pull_request:
+    paths:
+      - 'common/vatra/**'
+      - '.github/workflows/vatra.yml'
+      - 'LICENSE'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  debian:
+    runs-on: ubuntu-latest
+    container: debian:trixie
+    defaults:
+      run:
+        working-directory: common/vatra
+    steps:
+      - name: Install Debian dependencies
+        working-directory: .
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential ca-certificates curl git pkg-config dpkg-dev \
+            libxkbcommon-dev libwayland-dev desktop-file-utils python3
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        working-directory: .
+        run: |
+          curl --proto '=https' --tlsv1.2 -fsS https://sh.rustup.rs -o /tmp/vatra-rustup.sh
+          sh /tmp/vatra-rustup.sh -y --profile minimal
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - name: Run tests
+        run: |
+          cargo test --locked
+          python3 -m py_compile packaging/vatra-tlp-helper
+      - name: Build and inspect package
+        run: |
+          bash packaging/build-deb.sh
+          dpkg-deb --info dist/*.deb
+          dpkg-deb --contents dist/*.deb
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vatra-debian-trixie
+          path: common/vatra/dist/*.deb
+          if-no-files-found: error

@@ -1,0 +1,509 @@
+#!/usr/bin/python3 -I
+"""Apply reviewed EPP and CPU frequency caps through the TLP 1.8 AC/BAT backend."""
+
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import stat
+import subprocess
+import sys
+import tempfile
+
+CONFIG_DIR = Path("/etc/tlp.d")
+DROP_IN = CONFIG_DIR / "99-vatra-epp.conf"
+KEYS = {source: f"CPU_ENERGY_PERF_POLICY_ON_{source}" for source in ("AC", "BAT")}
+MAX_KEYS = {source: f"CPU_SCALING_MAX_FREQ_ON_{source}" for source in KEYS}
+CAP_PERCENT = {"automatic": 100, "balanced": 80, "performance": 100, "power-saver": 60}
+VALUES = {"performance", "balance_performance", "balance_power", "power"}
+PROFILE_LINE = re.compile(
+    r"# Vatra profile (AC|BAT)=(automatic|balanced|performance|power-saver|custom),"
+    r"(performance|balance_performance|balance_power|power|-),([1-9][0-9]{0,7}|-)"
+)
+CPUS = Path("/sys/devices/system/cpu/cpufreq")
+ENV = {"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LANG": "C", "LC_ALL": "C"}
+UNITS = ("power-profiles-daemon", "tuned", "tuned-ppd", "auto-cpufreq",
+         "laptop-mode", "system76-power", "cpupower")
+
+
+def run(binary, *args, check=True, timeout=10):
+    return subprocess.run(
+        [binary, *args], cwd="/", env=ENV, text=True, errors="replace",
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=check, timeout=timeout,
+    )
+
+
+def tlp_stat(flag):
+    for executable in (Path("/usr/bin/tlp-stat"), Path("/usr/sbin/tlp-stat")):
+        if executable.is_file() and os.access(executable, os.X_OK):
+            return run(str(executable), flag).stdout
+    raise ValueError("tlp-stat was not found in /usr/bin or /usr/sbin.")
+
+
+def verify_manager(source):
+    for unit in UNITS:
+        state = run("/usr/bin/systemctl", "show", "--no-pager",
+                    "--property=LoadState", "--property=ActiveState",
+                    unit + ".service", check=False).stdout.splitlines()
+        if "LoadState=not-found" in state:
+            continue
+        if "LoadState=loaded" not in state or "ActiveState=inactive" not in state:
+            raise ValueError(f"Competing manager active or unverified: {unit}.")
+
+    status = tlp_stat("-s")
+    if not re.search(r"^--- TLP 1\.8\.\d+\s", status, re.M):
+        raise ValueError("Only TLP 1.8 is supported by this helper.")
+    _, separator, fields = status.partition("+++ TLP Status")
+    if not separator:
+        raise ValueError("TLP status is unavailable.")
+    fields = dict((name.strip(), value.strip().lower())
+                  for line in fields.splitlines() if "=" in line
+                  for name, value in (line.split("=", 1),))
+    expected = "ac" if source == "AC" else "battery"
+    if (fields.get("State") != "enabled" or fields.get("Mode") != expected
+            or fields.get("Power source") != expected):
+        raise ValueError("TLP mode or power source changed. Reopen Profiles.")
+
+
+def effective_config():
+    output = tlp_stat("-c")
+    _, separator, lines = output.partition("+++ Configured Settings:")
+    if not separator:
+        raise ValueError("Effective TLP configuration is unavailable.")
+    values = {}
+    for line in lines.splitlines():
+        if not line.strip():
+            continue
+        match = re.fullmatch(r".+?: ([A-Z][A-Z0-9_]*)=(.*)", line)
+        if match is None or match[1] in values:
+            raise ValueError("Unexpected effective TLP configuration format.")
+        values[match[1]] = match[2]
+    if not values:
+        raise ValueError("Effective TLP configuration is empty.")
+    return values
+
+
+def verify_config_delta(before, after, requested):
+    if any(after.get(key, "").strip('"') != value for key, value in requested.items()):
+        raise ValueError("TLP did not select the Vatra EPP override.")
+    changed = {name for name in before.keys() | after.keys()
+               if before.get(name) != after.get(name)}
+    if changed - requested.keys():
+        raise ValueError("TLP would change a setting outside the selected mode.")
+
+
+def cpu_state():
+    state = {}
+    for policy in sorted(CPUS.glob("policy[0-9]*")):
+        def attribute(name):
+            return (policy / name).read_text().strip()
+
+        governor = attribute("scaling_governor")
+        minimum = int(attribute("scaling_min_freq"))
+        maximum = int(attribute("scaling_max_freq"))
+        if not 0 < minimum < maximum:
+            raise ValueError("CPU limits are invalid or locked to one frequency.")
+        state[policy.name] = (
+            governor, minimum, maximum, attribute("energy_performance_preference"),
+            attribute("energy_performance_available_preferences").split(),
+        )
+    if not state:
+        raise ValueError("No CPU policies found.")
+    return state
+
+
+def read_override():
+    try:
+        metadata = DROP_IN.lstat()
+    except FileNotFoundError:
+        return None, {}, {}
+    if (not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != 0
+            or metadata.st_mode & 0o022 or metadata.st_size > 1024):
+        raise ValueError("The existing Vatra override has unexpected permissions or contents.")
+    previous = DROP_IN.read_bytes()
+    entries = {}
+    profiles = {}
+    for line in previous.decode("ascii").splitlines():
+        if line == "# Managed by Vatra" or not line:
+            continue
+        profile = PROFILE_LINE.fullmatch(line)
+        if profile and profile[1] not in profiles:
+            profiles[profile[1]] = profile.groups()[1:]
+            continue
+        key, _, value = line.partition("=")
+        valid_epp = key in KEYS.values() and value in VALUES
+        valid_cap = key in MAX_KEYS.values() and re.fullmatch(r"[1-9][0-9]{0,7}", value)
+        if (not valid_epp and not valid_cap) or key in entries:
+            raise ValueError("The existing Vatra override contains unexpected settings.")
+        entries[key] = value
+    return previous, entries, profiles
+
+
+def store_override(data):
+    if data is None:
+        DROP_IN.unlink(missing_ok=True)
+        return
+    fd, name = tempfile.mkstemp(prefix=".vatra-epp-", dir=CONFIG_DIR)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fchmod(handle.fileno(), 0o644)
+            os.fsync(handle.fileno())
+        os.replace(name, DROP_IN)
+    finally:
+        Path(name).unlink(missing_ok=True)
+
+
+def override_bytes(entries, profiles):
+    if not entries and not profiles:
+        return None
+    header = "# Managed by Vatra\n" + "".join(
+        f"# Vatra profile {source}={','.join(profile)}\n"
+        for source, profile in sorted(profiles.items())
+    )
+    return (header + "".join(
+        f"{key}={value}\n" for key, value in sorted(entries.items())
+    )).encode("ascii")
+
+
+def configured_limit(config, key):
+    value = config.get(key, "").strip('"')
+    if not value:
+        return None
+    if not value.isascii() or not value.isdecimal() or int(value) == 0:
+        raise ValueError(f"{key} is not a usable frequency.")
+    return int(value)
+
+
+def cpu_ranges(baseline, current, source):
+    policies = [CPUS / name for name in current]
+    hardware_floor = max(int((p / "cpuinfo_min_freq").read_text()) for p in policies)
+    hardware_ceiling = min(int((p / "cpuinfo_max_freq").read_text()) for p in policies)
+    if not 0 < hardware_floor < hardware_ceiling:
+        raise ValueError("CPU policies do not have a shared frequency range.")
+    result = {}
+    for target, key in MAX_KEYS.items():
+        configured_min = configured_limit(baseline, f"CPU_SCALING_MIN_FREQ_ON_{target}")
+        configured_max = configured_limit(baseline, key)
+        minimum = configured_min or hardware_floor
+        if target == source:
+            minimum = max(minimum, *(policy[1] for policy in current.values()))
+        minimum = max(minimum, hardware_floor)
+        ceiling = configured_max or hardware_ceiling
+        if not minimum < ceiling <= hardware_ceiling:
+            raise ValueError(f"The {target} CPU range does not support a Vatra limit.")
+        result[target] = (minimum, ceiling)
+    return result
+
+
+def preset_cap(minimum, ceiling, mode):
+    return minimum + (ceiling - minimum) * CAP_PERCENT[mode] // 100
+
+
+def calculate_maxima(baseline, current, source, mode, single_mode, caps):
+    targets = KEYS if mode else (source,) if single_mode in CAP_PERCENT or caps else ()
+    if not targets:
+        return {}, False
+    result = {}
+    above_preset = False
+    ranges = cpu_ranges(baseline, current, source)
+    for target in targets:
+        minimum, ceiling = ranges[target]
+        preset = mode or single_mode
+        default = preset_cap(minimum, ceiling, preset) if preset in CAP_PERCENT else None
+        cap = caps.get(target, default)
+        if not minimum < cap <= ceiling:
+            raise ValueError(f"{target} CPU maximum must be above {limit_label(minimum)} and at most {limit_label(ceiling)}.")
+        result[MAX_KEYS[target]] = str(cap)
+        above_preset |= default is not None and cap > default
+    return result, above_preset
+
+
+def print_ranges(source):
+    verify_manager(source)
+    before = effective_config()
+    _, entries, _ = read_override()
+    current_policies = cpu_state()
+    for target, (minimum, ceiling) in cpu_ranges(preview_baseline(before, entries), current_policies, source).items():
+        current = (min(policy[2] for policy in current_policies.values()) if target == source
+                   else configured_limit(before, MAX_KEYS[target]) or ceiling)
+        defaults = [preset_cap(minimum, ceiling, mode) for mode in CAP_PERCENT]
+        print(target, minimum, ceiling, current, *defaults, sep="\t")
+
+
+def prepare(source, requested, battery):
+    verify_manager(source)
+    before = effective_config()
+    current = cpu_state()
+    desired = {} if requested == "keep" else {KEYS[source]: requested}
+    if battery is not None:
+        if requested != battery and before.get("TLP_PERSISTENT_DEFAULT", "").strip('"') == "1":
+            raise ValueError("Automatic requires TLP to switch profiles when the power source changes.")
+        desired = {KEYS["AC"]: requested, KEYS["BAT"]: battery}
+    for target, key in KEYS.items():
+        governor = before.get(f"CPU_SCALING_GOVERNOR_ON_{target}", "").strip('"')
+        if key in desired and governor == "performance" and desired[key] != "performance":
+            raise ValueError(f"The {target} performance governor can override the requested EPP.")
+    live_target = desired.get(KEYS[source])
+    if any(value not in policy[4] for policy in current.values() for value in desired.values()):
+        raise ValueError("Requested EPP is unavailable on one or more CPU policies.")
+    for field, index in (("MIN", 1), ("MAX", 2)):
+        limit = configured_limit(before, f"CPU_SCALING_{field}_FREQ_ON_{source}")
+        if limit is not None and any(policy[index] != limit for policy in current.values()):
+            raise ValueError("Configured frequency limits differ from the live limits.")
+
+    return before, current, desired, live_target
+
+
+def preview_baseline(before, entries):
+    shadowed = set(entries) & set(MAX_KEYS.values())
+    if not shadowed:
+        return before
+    files = sorted(path for path in CONFIG_DIR.glob("*.conf") if path != DROP_IN and path.is_file())
+    user_config = Path("/etc/tlp.conf")
+    if not user_config.is_file():
+        raise ValueError("Cannot read underlying frequency limits without /etc/tlp.conf.")
+    files.append(user_config)
+    baseline = {key: value for key, value in before.items() if key not in shadowed}
+    for path in files:
+        for line in path.read_text().splitlines():
+            assignment = re.fullmatch(r'([A-Z_]+)(=|\+=)(?:"([0-9]*)"|([0-9]*)) *(?:#.*)?', line)
+            if not assignment or assignment[1] not in shadowed:
+                continue
+            if assignment[2] != "=":
+                raise ValueError(f"Cannot preview an appended frequency limit in {path.name}.")
+            baseline[assignment[1]] = assignment[3] if assignment[3] is not None else assignment[4]
+    return baseline
+
+
+def verify_switching(before, maxima):
+    if (MAX_KEYS["AC"] in maxima and MAX_KEYS["BAT"] in maxima
+            and maxima[MAX_KEYS["AC"]] != maxima[MAX_KEYS["BAT"]]
+            and before.get("TLP_PERSISTENT_DEFAULT", "").strip('"') == "1"):
+        raise ValueError("Different AC and BAT limits require TLP to switch profiles with the power source.")
+
+
+def plan_token(before, current, desired, profile, profiles):
+    payload = json.dumps([before, current, desired, profile, profiles], sort_keys=True).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def limit_label(value):
+    return f"{int(value) / 1000:g} MHz"
+
+
+def preview(source, requested, battery, mode, single_mode, caps):
+    before, current, desired, _ = prepare(source, requested, battery)
+    raising = False
+    _, entries, profiles = read_override()
+    if mode or single_mode in CAP_PERCENT or caps:
+        baseline = preview_baseline(before, entries)
+        maxima, raising = calculate_maxima(baseline, current, source, mode, single_mode, caps)
+        verify_switching(before, maxima)
+        desired.update(maxima)
+        for target, key in MAX_KEYS.items():
+            if key not in maxima:
+                continue
+            old = (min(policy[2] for policy in current.values()) if target == source
+                   else configured_limit(before, key))
+            raising |= old is not None and int(maxima[key]) > old
+    print(plan_token(before, current, desired, mode or single_mode, profiles))
+    print("raise" if raising else "normal")
+    for target in KEYS:
+        if KEYS[target] not in desired and MAX_KEYS[target] not in desired:
+            continue
+        current_epp = before.get(KEYS[target], "").strip('"') or "Unspecified"
+        if target == source:
+            current_epp = ", ".join(sorted({policy[3] for policy in current.values()}))
+            limits = sorted({policy[2] for policy in current.values()})
+            current_max = " / ".join(limit_label(value) for value in (limits if len(limits) == 1 else (limits[0], limits[-1])))
+        else:
+            configured_max = configured_limit(before, MAX_KEYS[target])
+            current_max = limit_label(configured_max) if configured_max else "Default"
+        next_max = limit_label(desired[MAX_KEYS[target]]) if MAX_KEYS[target] in desired else current_max
+        print("\t".join([target, current_epp, desired.get(KEYS[target], current_epp), current_max, next_max]))
+
+
+def apply(source, requested, battery, mode, single_mode, caps, expected):
+    before, current, desired, live_target = prepare(source, requested, battery)
+    previous, entries, profiles = read_override()
+    profile = mode or single_mode
+    cap_requested = bool(mode or single_mode in CAP_PERCENT or caps)
+    proposed = desired.copy()
+    if cap_requested:
+        maxima, _ = calculate_maxima(preview_baseline(before, entries), current, source, mode, single_mode, caps)
+        verify_switching(before, maxima)
+        proposed.update(maxima)
+    if expected != plan_token(before, current, proposed, profile, profiles):
+        raise ValueError("The power plan changed. Review it again before applying.")
+    wrote_override = False
+    started = False
+    expected_max = None
+    try:
+        baseline = before
+        if cap_requested:
+            shadowed = {key for key in MAX_KEYS.values() if key in proposed}
+            underlying = {key: value for key, value in entries.items() if key not in shadowed}
+            if underlying != entries:
+                store_override(override_bytes(underlying, profiles))
+                wrote_override = True
+                baseline = effective_config()
+                changed = {key for key in before.keys() | baseline.keys()
+                           if before.get(key) != baseline.get(key)}
+                if changed - shadowed:
+                    raise ValueError("Other TLP settings changed while reading base limits.")
+            maxima, _ = calculate_maxima(baseline, current, source, mode, single_mode, caps)
+            desired.update(maxima)
+            entries.update(maxima)
+        if expected != plan_token(before, current, desired, profile, profiles):
+            raise ValueError("The power plan changed. Review it again before applying.")
+        expected_max = int(desired[MAX_KEYS[source]]) if MAX_KEYS[source] in desired else None
+        live_matches = all(
+            (live_target is None or policy[3] == live_target)
+            and (expected_max is None or policy[2] == expected_max)
+            for policy in current.values()
+        )
+        entries.update({key: value for key, value in desired.items()
+                        if before.get(key, "").strip('"') != value})
+        selected_sources = KEYS if mode else (source,)
+        updated_profiles = profiles.copy()
+        for target in selected_sources:
+            if profile is None:
+                updated_profiles.pop(target, None)
+                continue
+            epp = desired.get(KEYS[target])
+            maximum = desired.get(MAX_KEYS[target])
+            if target == source:
+                live_epp = {policy[3] for policy in current.values()}
+                live_max = {str(policy[2]) for policy in current.values()}
+                if epp is None and len(live_epp) == 1:
+                    live_value = next(iter(live_epp))
+                    epp = live_value if live_value in VALUES else None
+                if maximum is None and len(live_max) == 1:
+                    maximum = next(iter(live_max))
+            updated_profiles[target] = (profile, epp or "-", maximum or "-")
+        updated = override_bytes(entries, updated_profiles)
+        if wrote_override or updated != previous:
+            store_override(updated)
+            wrote_override = True
+        elif live_matches:
+            return "Mode already configured and active."
+
+        verify_config_delta(before, effective_config(), desired)
+        verify_manager(source)
+        if cpu_state() != current:
+            raise ValueError("Live CPU configuration changed during preparation.")
+        if not live_matches:
+            started = True
+            run("/usr/sbin/tlp", "start", timeout=60)
+        verify_manager(source)
+        after = cpu_state()
+        if after.keys() != current.keys() or any(
+            policy[:2] != current[name][:2] or policy[3] != (live_target or current[name][3])
+            or policy[2] != (current[name][2] if expected_max is None else expected_max)
+            for name, policy in after.items()
+        ):
+            raise ValueError("Live CPU settings did not match the requested mode.")
+        verify_config_delta(before, effective_config(), desired)
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        try:
+            if wrote_override:
+                store_override(previous)
+            if started:
+                run("/usr/sbin/tlp", "start", timeout=60)
+                verify_manager(source)
+                restored = cpu_state()
+                # TLP may leave the live maximum untouched when the restored
+                # config had no explicit maximum for this power source.
+                if expected_max is not None and configured_limit(before, MAX_KEYS[source]) is None:
+                    if restored.keys() != current.keys() or any(
+                        policy[:2] != current[name][:2] for name, policy in restored.items()
+                    ):
+                        raise ValueError("CPU policies changed during rollback.")
+                    for name, policy in restored.items():
+                        if policy[2] != current[name][2]:
+                            (CPUS / name / "scaling_max_freq").write_text(str(current[name][2]))
+                if cpu_state() != current:
+                    raise ValueError("Live CPU settings differ from those before Apply.")
+        except (OSError, ValueError, subprocess.SubprocessError) as rollback_error:
+            raise ValueError("Apply failed; verify CPU settings because rollback could not be confirmed.") from rollback_error
+        raise ValueError(f"Apply failed. {short_error(error)}") from error
+    if expected_max is not None:
+        return f"Applied {source} CPU settings. Maximum: {limit_label(expected_max)}."
+    if battery is not None:
+        return f"Saved AC: {requested} / BAT: {battery}. CPU limits verified."
+    return f"Applied {requested} to {source}; CPU limits verified."
+
+
+def short_error(error):
+    if isinstance(error, subprocess.CalledProcessError):
+        return f"{Path(error.cmd[0]).name} exited with status {error.returncode}."
+    if isinstance(error, subprocess.TimeoutExpired):
+        return f"{Path(error.cmd[0]).name} timed out."
+    return str(error)
+
+
+def main():
+    args = sys.argv[1:]
+    if len(args) == 2 and args[0] == "--limits" and args[1] in KEYS:
+        print_ranges(args[1])
+        return
+    preview_only = bool(args and args[0] == "--preview")
+    if preview_only:
+        args.pop(0)
+    expected = None
+    if args and args[-1].startswith("--expect="):
+        expected = args.pop().split("=", 1)[1]
+        if preview_only or not re.fullmatch(r"[a-f0-9]{64}", expected):
+            raise ValueError("Invalid power plan signature.")
+    if not preview_only and (os.geteuid() != 0 or expected is None):
+        raise ValueError("Applying requires administrator authorization and a reviewed plan.")
+    positional = []
+    caps = {}
+    single_mode = None
+    for arg in args:
+        match = re.fullmatch(r"--cap-(AC|BAT)=([1-9][0-9]{0,7})", arg)
+        if match and match[1] not in caps:
+            caps[match[1]] = int(match[2])
+        elif arg.startswith("--profile=") and single_mode is None:
+            single_mode = arg.split("=", 1)[1]
+        else:
+            positional.append(arg)
+    if len(positional) not in (2, 3, 4):
+        raise ValueError("Expected source and EPP.")
+    source, value, *rest = positional
+    battery = rest[0] if rest else None
+    mode = rest[1] if len(rest) == 2 else None
+    if mode is not None and mode not in CAP_PERCENT:
+        raise ValueError("Unsupported mode.")
+    keep_epp = value == "keep" and battery is None and single_mode in (None, "custom") and bool(caps)
+    if source not in KEYS or (value not in VALUES and not keep_epp) or (battery is not None and battery not in VALUES):
+        raise ValueError("Unsupported power source or EPP.")
+    if single_mode is not None and (single_mode not in (*CAP_PERCENT, "custom") or battery is not None):
+        raise ValueError("Unsupported single-source profile.")
+    if caps and not (mode or (battery is None and set(caps) == {source})):
+        raise ValueError("Frequency limits do not match the selected power plan.")
+    if preview_only:
+        preview(source, value, battery, mode, single_mode, caps)
+        return
+    metadata = CONFIG_DIR.lstat()
+    if not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid != 0 or metadata.st_mode & 0o022:
+        raise ValueError("TLP configuration directory permissions are unsafe.")
+    fd = os.open("/run/vatra-tlp.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "rb") as lock:
+        metadata = os.fstat(lock.fileno())
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != 0 or metadata.st_mode & 0o022:
+            raise ValueError("Vatra lock permissions are unsafe.")
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        print(apply(source, value, battery, mode, single_mode, caps, expected))
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        print(short_error(error), file=sys.stderr)
+        sys.exit(1)

@@ -1,0 +1,9 @@
+[Xfce Panel]
+Type=X-XFCE-PanelPlugin
+Name=Vatra Panel
+Comment=View battery charge and open Vatra
+Icon=vatra
+X-XFCE-Module=vatra-panel
+X-XFCE-Internal=false
+X-XFCE-API=2.0
+X-XFCE-Unique=true

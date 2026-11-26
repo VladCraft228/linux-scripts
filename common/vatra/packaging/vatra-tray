@@ -1,0 +1,159 @@
+#!/usr/bin/python3 -I
+"""XFCE/X11 notification area frontend. Vatra owns all power operations."""
+import os
+import sys
+import threading
+
+os.environ["GDK_BACKEND"] = "x11"
+import gi
+
+gi.require_version("Gtk", "3.0")
+gi.require_version("GdkPixbuf", "2.0")
+from gi.repository import GdkPixbuf, GLib, Gtk
+
+
+def send(action):
+    print(action, flush=True)
+
+
+DIGITS = {
+    "0": (7, 5, 5, 5, 7), "1": (2, 6, 2, 2, 7), "2": (7, 1, 7, 4, 7),
+    "3": (7, 1, 7, 1, 7), "4": (5, 5, 7, 1, 1), "5": (7, 4, 7, 1, 7),
+    "6": (7, 4, 7, 5, 7), "7": (7, 1, 1, 1, 1), "8": (7, 5, 7, 5, 7),
+    "9": (7, 5, 7, 1, 7), "%": (5, 1, 2, 4, 5),
+}
+
+
+def battery_icon(level, charging, accent=(255, 177, 107), percent=0, bolt=0):
+    label = f"{level}%" if level is not None and percent else ""
+    beside = bool(label and percent == 2)
+    text_width = max(0, 4 * len(label) - 1)
+    width = 24
+    pixels = bytearray(width * 24 * 4)
+
+    def rect(x, y, w, h, color):
+        for row in range(max(0, y), min(24, y + h)):
+            for col in range(max(0, x), min(width, x + w)):
+                offset = (row * width + col) * 4
+                pixels[offset:offset + 4] = color
+
+    theme = bytes((*accent, 255))
+    background = bytes((29, 38, 49, 255))
+    white = bytes((255, 255, 255, 255))
+    if beside:
+        rect(2, 3, 4, 2, theme)
+        rect(0, 5, 8, 15, theme)
+        rect(1, 6, 6, 13, background)
+        fill = round(13 * level / 100)
+        rect(1, 19 - fill, 6, fill, theme)
+    else:
+        rect(1, 5, 20, 14, theme)
+        rect(3, 7, 16, 10, background)
+        rect(22, 9, 2, 6, theme)
+        if level is not None:
+            rect(4, 8, round(14 * level / 100), 8, theme)
+
+    if label:
+        left = 9 + (15 - text_width) // 2 if beside else (22 - text_width) // 2
+        top = 7
+        if not beside:
+            rect(left - 1, top, text_width + 2, 10, background)
+        for col, character in enumerate(label):
+            for row, bits in enumerate(DIGITS[character]):
+                for px in range(3):
+                    if bits & (4 >> px):
+                        rect(left + 4 * col + px, top + 2 * row, 1, 2, white)
+
+    if charging and bolt != 2:
+        color = white if bolt == 1 else theme
+        if label and percent == 1:
+            segments = [(17, 1, 2), (16, 2, 3), (15, 3, 3), (15, 4, 5),
+                        (17, 5, 2), (16, 6, 2), (16, 7, 1)]
+        elif beside:
+            segments = [(4, 8, 1), (3, 9, 2), (2, 10, 2), (1, 11, 5),
+                        (3, 12, 2), (3, 13, 1), (2, 14, 1)]
+        else:
+            segments = [(12, 6, 2), (11, 7, 3), (10, 8, 4), (9, 9, 4), (8, 10, 8),
+                        (8, 11, 7), (11, 12, 3), (10, 13, 3), (10, 14, 2), (9, 15, 2)]
+        for x, y, w in segments:
+            rect(x - 1, y - 1, w + 2, 3, background)
+        for x, y, w in segments:
+            rect(x, y, w, 1, color)
+    return GdkPixbuf.Pixbuf.new_from_bytes(GLib.Bytes.new(bytes(pixels)),
+        GdkPixbuf.Colorspace.RGB, True, 8, width, 24, width * 4)
+
+
+def main():
+    if not Gtk.init_check()[0]:
+        return 1
+    icon = Gtk.StatusIcon()
+    icon.set_title("Vatra")
+    icon.set_from_pixbuf(battery_icon(None, False))
+    icon.set_tooltip_text("Vatra")
+    icon.set_visible(True)
+    menu = Gtk.Menu()
+
+    def item(label, action):
+        row = Gtk.MenuItem(label=label)
+        row.connect("activate", lambda _: send(action))
+        menu.append(row)
+
+    item("Open Vatra", "open")
+    modes = []
+    menu.append(Gtk.SeparatorMenuItem())
+    for label, action in [("Automatic", "automatic"), ("Balanced", "balanced"),
+                          ("Performance", "performance"), ("Power Saver", "power-saver")]:
+        row = Gtk.CheckMenuItem(label=label)
+        row.set_draw_as_radio(True)
+        menu.append(row)
+        handler = row.connect("activate", lambda _, action=action: send(action))
+        modes.append((row, handler, action))
+    menu.append(Gtk.SeparatorMenuItem())
+    autostart = Gtk.CheckMenuItem(label="Start at login")
+    menu.append(autostart)
+    autostart_handler = autostart.connect("activate", lambda _: send(
+        "autostart-on" if autostart.get_active() else "autostart-off"))
+    item("Disable tray", "disable")
+    item("Quit Vatra", "quit")
+    menu.show_all()
+    icon.connect("activate", lambda _: send("open"))
+    icon.connect("popup-menu", lambda status, button, time:
+                 menu.popup(None, None, Gtk.StatusIcon.position_menu, status, button, time))
+    icon.connect("notify::embedded", lambda status, _: send(
+        "embedded" if status.is_embedded() else "unembedded"))
+    if icon.is_embedded():
+        send("embedded")
+
+    last_icon = None
+
+    def update(line):
+        nonlocal last_icon
+        level, charging, active, ready, login, color, percent, bolt, tooltip = line.rstrip("\n").split("\t", 8)
+        state = (int(level) if level != "-" else None, charging == "1",
+                 tuple(bytes.fromhex(color)), int(percent), int(bolt))
+        if state != last_icon:
+            icon.set_from_pixbuf(battery_icon(*state))
+            last_icon = state
+        icon.set_tooltip_text(tooltip.replace("\\n", "\n"))
+        for row, handler, action in modes:
+            row.handler_block(handler)
+            row.set_active(action == active)
+            row.set_sensitive(ready == "1")
+            row.handler_unblock(handler)
+        autostart.handler_block(autostart_handler)
+        autostart.set_active(login == "1")
+        autostart.handler_unblock(autostart_handler)
+        return GLib.SOURCE_REMOVE
+
+    def read():
+        for line in sys.stdin:
+            GLib.idle_add(update, line)
+        GLib.idle_add(Gtk.main_quit)
+
+    threading.Thread(target=read, daemon=True).start()
+    Gtk.main()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
