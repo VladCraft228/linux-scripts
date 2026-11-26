@@ -19,6 +19,31 @@ printf '%s\n' Battery > "$battery/type"
 printf '%s\n' 68 > "$battery/capacity"
 printf '%s\n' Discharging > "$battery/status"
 printf '%s\n' 6300000 > "$battery/power_now"
+wayland_rendered() {
+    awk '
+        match($0, /get_xdg_surface\(new id xdg_surface[@#][0-9]+, wl_surface[@#][0-9]+\)/) {
+            surface = substr($0, RSTART, RLENGTH)
+            sub(/^.*, /, "", surface)
+            sub(/\)$/, "", surface)
+            toplevel[surface] = 1
+        }
+        match($0, /wl_surface[@#][0-9]+\.attach\(wl_buffer[@#][0-9]+,/) {
+            surface = substr($0, RSTART, RLENGTH)
+            sub(/\.attach.*/, "", surface)
+            if (toplevel[surface]) attached[surface] = 1
+        }
+        match($0, /wl_surface[@#][0-9]+\.commit\(\)/) {
+            surface = substr($0, RSTART, RLENGTH)
+            sub(/\.commit.*/, "", surface)
+            if (attached[surface]) {
+                rendered = 1
+                exit
+            }
+        }
+        END { exit !rendered }
+    ' "$1"
+}
+
 case "$kind" in
     x11)
         unset WAYLAND_DISPLAY WAYLAND_SOCKET
@@ -60,8 +85,7 @@ PY
         WAYLAND_DEBUG=client "$binary" >"$tmp/app.log" 2>&1 &
         pids+=("$!")
         for ((i=0; i<100; i++)); do
-            if grep -qE 'wl_surface@[0-9]+\.attach\(wl_buffer@' "$tmp/app.log" &&
-               grep -qE 'wl_surface@[0-9]+\.commit\(' "$tmp/app.log"; then
+            if wayland_rendered "$tmp/app.log"; then
                 exit 0
             fi
             kill -0 "${pids[1]}" 2>/dev/null || break
