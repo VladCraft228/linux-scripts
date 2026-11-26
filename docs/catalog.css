@@ -5,6 +5,7 @@
 .product:hover { border-color: var(--orange); }
 .panel { display: grid; place-items: center; min-height: 220px; }
 .pier { background: linear-gradient(#0b132a33, #0b132a66), url(prychal-dock/assets/pier.webp) center / cover; }
+.vatra-cover { background: radial-gradient(ellipse at 50% 42%, #6c422e, transparent 72%), #211b20; }
 .keyboard { background: radial-gradient(ellipse at 65% 18%, #415a79, transparent 62%), linear-gradient(125deg, #161d38, #29334e); }
 .osd { display: grid; place-content: center; text-align: center; width: 180px; height: 110px; line-height: 1.15; border-radius: 18px; background: #131929dd; border: 1px solid #9eafd65c; box-shadow: 0 16px 40px #080e2488; }
 .osd strong { font-size: 2.4rem; margin-bottom: 5px; }

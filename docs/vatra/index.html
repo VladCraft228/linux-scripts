@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Vatra is a native Linux laptop power dashboard for battery telemetry, power history, and CPU power profiles.">
+  <title>Vatra — Linux Scripts</title>
+  <link rel="icon" href="assets/vatra.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../prychal-dock/style.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="wrap mast">
+    <a class="brand" href="../">Linux<span>Scripts</span></a>
+    <nav aria-label="Main">
+      <a href="../">All tools</a>
+      <a href="#install">Install</a>
+      <a class="git" href="https://github.com/VladCraft228/linux-scripts/tree/main/common/vatra">GitHub</a>
+    </nav>
+  </header>
+  <main class="wrap">
+    <section class="hero vatra-hero">
+      <div>
+        <div class="vatra-name">
+          <img src="assets/vatra.svg" width="46" height="46" alt="">
+          <h1>Vatra</h1>
+        </div>
+        <h2>See where your battery goes.</h2>
+        <p class="lede">Track your laptop’s power draw, compare battery use across workloads, and tune CPU limits for battery and AC power.</p>
+        <div class="actions">
+          <a class="button primary" href="#install">Install Vatra</a>
+          <a class="button" href="https://github.com/VladCraft228/linux-scripts/tree/main/common/vatra#readme">Read the docs</a>
+        </div>
+      </div>
+      <figure class="demo vatra-shot">
+        <div class="power-sample" aria-hidden="true">
+          <div class="sample-header"><span>Vatra</span><span>Overview</span></div>
+          <div class="sample-readings">
+            <div><span>Battery</span><strong>64%</strong><span>On battery</span></div>
+            <div><span>Battery power</span><strong>7.2 W</strong><span>Power draw</span></div>
+          </div>
+          <div class="sample-history">
+            <span>Recent power draw</span>
+            <div class="sample-bars">
+              <i style="--level:42%"></i><i style="--level:38%"></i><i style="--level:49%"></i>
+              <i style="--level:48%"></i><i style="--level:55%"></i><i style="--level:77%"></i>
+              <i style="--level:91%"></i><i style="--level:66%"></i><i style="--level:50%"></i>
+              <i style="--level:41%"></i><i style="--level:45%"></i><i style="--level:39%"></i>
+              <i style="--level:46%"></i><i style="--level:48%"></i><i style="--level:42%"></i>
+              <i style="--level:37%"></i><i style="--level:43%"></i><i style="--level:45%"></i>
+            </div>
+            <div class="sample-time"><span>10 min ago</span><span>Now</span></div>
+          </div>
+        </div>
+        <figcaption class="demo-foot">Dashboard illustration with sample data</figcaption>
+      </figure>
+    </section>
+    <section class="features" aria-labelledby="feature-title">
+      <h2 id="feature-title">Track power. Tune performance.</h2>
+      <div class="feature-grid">
+        <article>
+          <h3>Battery readings</h3>
+          <p>See charge, battery health, power and estimated runtime. Available readings depend on your hardware.</p>
+        </article>
+        <article>
+          <h3>Power history</h3>
+          <p>Compare minimum, average, and maximum battery draw over the last 1, 5, or 10 minutes.</p>
+        </article>
+        <article>
+          <h3>CPU profiles</h3>
+          <p>Review energy preferences and frequency limits before applying AC and battery profiles with TLP 1.8.</p>
+        </article>
+        <article>
+          <h3>XFCE panel indicator</h3>
+          <p>Add an optional panel item with a themed battery icon and a full-size percentage. Click it to open Vatra.</p>
+        </article>
+      </div>
+    </section>
+    <section class="installation vatra-install" id="install" aria-labelledby="install-title">
+      <div>
+        <h2 id="install-title">Install on Debian or MX Linux.</h2>
+        <p>Use Debian 13 or a Debian 13-based MX Linux release and a current stable Rust toolchain. Build the main package first, then add the XFCE panel indicator if you want it.</p>
+        <p>For power controls, see the <a href="https://github.com/VladCraft228/linux-scripts/tree/main/common/vatra#apply-cpu-settings-through-tlp-18">TLP setup instructions</a>.</p>
+      </div>
+      <div class="code">
+        <div class="codehead"><span>Build and install Vatra</span><button type="button" data-copy="vatra-install" hidden>Copy commands</button></div>
+        <pre id="vatra-install" tabindex="0">sudo apt install git build-essential pkg-config fontconfig \
+  libxkbcommon-dev libwayland-dev dpkg-dev desktop-file-utils
+git clone https://github.com/VladCraft228/linux-scripts.git
+cd linux-scripts/common/vatra
+bash packaging/build-deb.sh
+sudo apt install "./dist/vatra_0.1.0_$(dpkg --print-architecture).deb"</pre>
+      </div>
+    </section>
+    <section class="installation vatra-install" aria-labelledby="panel-title">
+      <div>
+        <h2 id="panel-title">Add Vatra to the XFCE panel.</h2>
+        <p>After installing, right-click the XFCE panel and choose <strong>Panel → Add New Items → Vatra Panel</strong>.</p>
+      </div>
+      <div class="code">
+        <div class="codehead"><span>From common/vatra</span><button type="button" data-copy="panel-install" hidden>Copy commands</button></div>
+        <pre id="panel-install" tabindex="0">sudo apt install libxfce4panel-2.0-dev libgtk-3-dev
+bash packaging/build-xfce-panel-deb.sh
+sudo apt install "./dist/vatra-xfce-panel_0.1.0_$(dpkg --print-architecture).deb"</pre>
+      </div>
+    </section>
+  </main>
+  <footer class="wrap foot"><span>Vatra · Linux Scripts</span><a href="https://github.com/VladCraft228/linux-scripts/issues">Report an issue</a></footer>
+  <script src="copy.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+.vatra-hero { grid-template-columns: minmax(0, .83fr) minmax(0, 1.35fr); }
+.vatra-name { display: flex; align-items: center; gap: 13px; margin-bottom: 20px; }
+.vatra-name h1 { color: var(--orange); font-size: 2.15rem; }
+.vatra-hero h2 { max-width: 12ch; font-size: clamp(2.6rem, 4.8vw, 4.4rem); }
+.vatra-shot { margin: 0; background: #171e26; }
+.power-sample { padding: clamp(12px, 3vw, 27px); background: #101720; }
+.sample-header, .sample-time { display: flex; justify-content: space-between; }
+.sample-header { margin-bottom: 14px; color: var(--muted); }
+.sample-header span:first-child { color: var(--orange); font-weight: 700; }
+.sample-readings { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.sample-readings div, .sample-history { min-width: 0; padding: clamp(10px, 2.1vw, 19px); background: #1a2532; border-radius: 10px; }
+.sample-readings span { display: block; color: var(--muted); font-size: .875rem; }
+.sample-readings strong { display: block; color: var(--ink); font-size: clamp(1.6rem, 4vw, 3rem); line-height: 1.15; margin: 5px 0 8px; }
+.sample-history { margin-top: 10px; }
+.sample-bars { display: flex; align-items: end; gap: 4px; height: clamp(80px, 14vw, 160px); margin: 13px 0 8px; border-bottom: 1px solid #657082; }
+.sample-bars i { background: var(--orange); height: var(--level); flex: 1; border-radius: 3px 3px 0 0; }
+.sample-time { color: var(--muted); font-size: .8rem; }
+.vatra-install { align-items: start; }
+.vatra-install h2 { max-width: 18ch; }
+@media (max-width: 900px) {
+  .vatra-hero { grid-template-columns: minmax(0, 1fr); }
+  .vatra-hero h2 { max-width: 18ch; }
+}
